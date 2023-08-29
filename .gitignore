@@ -2,4 +2,10 @@
 src/build
 src/bin
 src/objs
+src/ext
 .sconsign.dblite
+/build
+/build-Debug
+/scenes
+/cmake
+.cache
