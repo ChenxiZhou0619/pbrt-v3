@@ -3,7 +3,7 @@
 # in this file. Would be nice to address some of these.
 
 CMAKE_MINIMUM_REQUIRED ( VERSION 3.1.0 )
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # For sanitizers
 SET (CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 
