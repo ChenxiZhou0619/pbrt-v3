@@ -52,17 +52,24 @@ Spectrum VolPathIntegratorV4::SampleVolumeLd(const Interaction &it,
     Vector3f wi = Normalize(p_e - it.p);
 
     Spectrum f, Tr;
+    Float misw;
 
     if (it.IsSurfaceInteraction()) {
         const SurfaceInteraction &isect = (const SurfaceInteraction &)it;
         f = isect.bsdf->f(isect.wo, wi) * AbsDot(wi, isect.shading.n);
         Tr = vis.Tr(scene, sampler);
+
+        Float pdf_wi = isect.bsdf->Pdf(isect.wo, wi);
+        Float pdf_t = Tr[0] * Spectrum(1.f)[0];
+        Float pdf_1 = pdf_pe, pdf_2 = pdf_wi * pdf_t;
+        misw = pdf_1 / (pdf_1 + pdf_2);
     } else {
-        // TODO
+        // TODO Volumetric scattering
     }
 
     // TODO Hard code here
-    return f * Tr * Spectrum(1.f) * Spectrum(1.f) / pdf_pe;
+
+    return f * Tr * Spectrum(1.f) * Spectrum(1.f) / pdf_pe * misw;
 }
 
 Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
@@ -73,6 +80,10 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
     Float eta_scale = 1;
 
     int bounces;
+
+    Float prev_scatter_pdf;
+    Point3f prev_shading_p;
+
     RayDifferential ray(r);
     for (bounces = 0;; bounces++) {
         SurfaceInteraction isect;
@@ -103,9 +114,19 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                         Float pdf = T_maj[0] * sigma_maj[0];
                         Spectrum betap = beta * T_maj / pdf;
 
-                        if (!betap.IsBlack() &&
-                            (bounces == 0 || specular_bounce))
-                            L += betap * sigma_a * Le;
+                        if (!betap.IsBlack()) {
+                            if (bounces == 0 || specular_bounce)
+                                L += betap * sigma_a * Le;
+                            else {
+                                // MIS
+                                Float pdf_1 = prev_scatter_pdf * pdf;
+                                Float pdf_2 =
+                                    3 / (4 * M_PI * 0.2 * 0.2 * 0.2 *
+                                         (p - prev_shading_p).LengthSquared());
+                                Float misw = pdf_1 / (pdf_1 + pdf_2);
+                                L += betap * sigma_a * Le * misw;
+                            }
+                        }
                     }
 
                     Float p_absorb = sigma_a[0] / sigma_maj[0];
@@ -190,6 +211,10 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                                           BSDF_ALL, &flags);
         if (f.IsBlack() || pdf == .0f) break;
         beta *= f * AbsDot(wi, isect.shading.n) / pdf;
+
+        prev_scatter_pdf = pdf;
+        prev_shading_p = isect.p;
+
         specular_bounce = (flags & BSDF_SPECULAR) != 0;
         if ((flags & BSDF_SPECULAR) && (flags & BSDF_TRANSMISSION)) {
             Float eta = isect.bsdf->eta;
