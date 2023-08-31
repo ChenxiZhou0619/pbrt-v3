@@ -108,8 +108,13 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                         }
 
                         return false;
+
                     } else {
-                        // TODO
+                        Spectrum sigma_n = maj_rec.sigma_n;  // TODO Chromatic
+                        Float pdf = T_maj[0] * sigma_n[0];
+                        beta *= T_maj * sigma_n / pdf;
+                        if (pdf == 0) beta = Spectrum(.0f);
+                        return !beta.IsBlack();
                     }
                 });
 

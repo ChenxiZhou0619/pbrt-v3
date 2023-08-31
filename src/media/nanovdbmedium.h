@@ -46,7 +46,9 @@ struct MajorantGrid {
 };
 
 struct MajorantSeg {
-    //
+    Float t_w;
+    Float dt_w;
+    Vector3i index;
 };
 
 class DDATracker {
@@ -84,6 +86,16 @@ class DDATracker {
         }
     }
 
+    bool track(MajorantSeg *seg);
+
+    // still in same voxel
+    void march(float t_w);
+
+    // to next voxel
+    void next();
+
+    Float get_world_t() const { return cur_t_w; }
+
   public:
     bool terminate;
 
@@ -94,6 +106,8 @@ class DDATracker {
     Float delta_t_w[3];         // t for ray to cross a voxel in world space
 
     int step[3], voxel_limit[3], cur_index[3];
+
+    int step_axis;
 };
 
 struct TrackSegment {
@@ -140,7 +154,6 @@ class NanovdbMedium : public Medium {
           density_scale(density_scale),
           sigma_a(sigma_a),
           sigma_s(sigma_s),
-          sigma_maj(sigma_a + sigma_s),
           medium_transform(medium_transform) {
         // Read the nanovdb file
 
@@ -224,7 +237,7 @@ class NanovdbMedium : public Medium {
                      MajorantSampleRecord *maj_record) const;
 
   protected:
-    Float sampleDensity(int voxel_index[3]) const;
+    Float sampleDensity(Point3f p_world) const;
 
     // Transform a world point to medium local coordinate
     Point3f worldToIndex(Point3f p_world) const;
@@ -243,7 +256,7 @@ class NanovdbMedium : public Medium {
     Float g;
 
     Float density_scale;
-    Spectrum sigma_a, sigma_s, sigma_maj;
+    Spectrum sigma_a, sigma_s;
     Transform medium_transform;
 
     Float voxel_size;

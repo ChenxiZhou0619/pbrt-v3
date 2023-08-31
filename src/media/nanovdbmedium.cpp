@@ -1,7 +1,7 @@
 #include "nanovdbmedium.h"
 
 #include "memory.h"
-
+#include "sampler.h"
 namespace pbrt {
 
 Float MajorantGrid::at(int x, int y, int z) const {
@@ -24,6 +24,58 @@ Point3f MajorantGrid::toIndex(Point3f p_world) const {
           iz_f = (p_world[2] - world_bound.pMin[2]) / voxel_size_w[2];
 
     return Point3f(ix_f, iy_f, iz_f);
+}
+
+bool DDATracker::track(MajorantSeg *seg) {
+    if (terminate) return false;
+
+    step_axis = -1;
+    if (next_crossingT_w[0] < next_crossingT_w[1] &&
+        next_crossingT_w[0] < next_crossingT_w[2]) {
+        step_axis = 0;
+    } else if (next_crossingT_w[1] < next_crossingT_w[2]) {
+        step_axis = 1;
+    } else
+        step_axis = 2;
+
+    Float dt_w;
+    if (next_crossingT_w[step_axis] > t_max_w) {
+        /* Terminate in current voxel */
+        terminate = true;
+        dt_w = t_max_w - cur_t_w;
+        //        cur_t_w = t_max_w;
+    } else {
+        dt_w = next_crossingT_w[step_axis] - cur_t_w;
+        // cur_t_w = next_crossingT_w[step_axis];
+    }
+
+    seg->index[0] = cur_index[0];
+    seg->index[1] = cur_index[1];
+    seg->index[2] = cur_index[2];
+    seg->dt_w = dt_w;
+    seg->t_w = cur_t_w;
+
+    // cur_index[step_axis] += step[step_axis];
+    // next_crossingT_w[step_axis] += delta_t_w[step_axis];
+    //
+    // if (cur_index[step_axis] == voxel_limit[step_axis]) terminate = true;
+    return true;
+}
+
+void DDATracker::march(float t_w) { cur_t_w += t_w; }
+
+void DDATracker::next() {
+    if (next_crossingT_w[step_axis] > t_max_w) {
+        terminate = true;
+        cur_t_w = t_max_w;
+    } else {
+        cur_t_w = next_crossingT_w[step_axis];
+    }
+
+    cur_index[step_axis] += step[step_axis];
+    next_crossingT_w[step_axis] += delta_t_w[step_axis];
+
+    if (cur_index[step_axis] == voxel_limit[step_axis]) terminate = true;
 }
 
 RegularTracker::RegularTracker(const int minIndex[3], const int maxIndex[3],
@@ -91,14 +143,50 @@ bool RegularTracker::track(TrackSegment *seg) {
 }
 
 Spectrum NanovdbMedium::Tr(const Ray &ray, Sampler &sampler) const {
-    RegularTracker tracker = get_regular_tracker(ray);
-    Spectrum thick(.0f);
-    TrackSegment seg;
+    /*    RegularTracker tracker = get_regular_tracker(ray);
+        Spectrum thick(.0f);
+        TrackSegment seg;
+        while (tracker.track(&seg)) {
+            Float density = sampleDensity(seg.voxelIndex);
+            thick += density * sigma_maj * seg.dt;
+        }
+        return Exp(-thick);
+    */
+    Spectrum tr(1.f);
+    DDATracker tracker = get_dda_tracker(ray);
+    Float thick_bound = -std::log(1 - sampler.Get1D());
+    Float sum = .0;
+    Float t_w = tracker.get_world_t();
+
+    MajorantSeg seg;
     while (tracker.track(&seg)) {
-        Float density = sampleDensity(seg.voxelIndex);
-        thick += density * sigma_maj * seg.dt;
+        int ix = seg.index[0], iy = seg.index[1], iz = seg.index[2];
+        Float maj_density = maj_grid->at(ix, iy, iz);
+        Float dt = seg.dt_w;
+        Float sigma_maj =
+            maj_density * (sigma_s + sigma_a)[0];  // TODO Chromatic
+
+        if (sum + sigma_maj * seg.dt_w > thick_bound) {
+            dt = (thick_bound - sum) / sigma_maj;
+            t_w += dt;
+
+            Float density = sampleDensity(ray(t_w));
+            Float ratio = (maj_density - density) / maj_density;
+            tr *= ratio;
+
+            sum = .0f;
+            thick_bound = -std::log(1 - sampler.Get1D());
+            tracker.march(dt);
+            continue;
+        }
+
+        sum += dt * sigma_maj;
+        t_w += dt;
+
+        tracker.next();
     }
-    return Exp(-thick);
+
+    return tr;
 }
 
 Spectrum NanovdbMedium::Sample(const Ray &ray, Sampler &sampler,
@@ -107,53 +195,97 @@ Spectrum NanovdbMedium::Sample(const Ray &ray, Sampler &sampler,
     // TODO
 }
 
-Float NanovdbMedium::sampleDensity(int voxel_index[3]) const {
+Float NanovdbMedium::sampleDensity(Point3f p_world) const {
     using Sampler =
         nanovdb::SampleFromVoxels<nanovdb::FloatGrid::TreeType, 1, false>;
-    nanovdb::Vec3R sample_loc{voxel_index[0] + .5, voxel_index[1] + .5,
-                              voxel_index[2] + .5};
-    return Sampler(densityFloatGrid->tree())(sample_loc) * density_scale;
+    auto p_index = worldToIndex(p_world);
+    return Sampler(densityFloatGrid->tree())(p_index) * density_scale;
 }
 
 bool NanovdbMedium::SampleT_maj(const RayDifferential &ray, Float u,
                                 MemoryArena &arena,
                                 MajorantSampleRecord *maj_record) const {
     // \sum dt * sigma_maj = - log(1 - u)
-    RegularTracker tracker = get_regular_tracker(ray);
-    Float thick_bound = -std::log(1 - u);
+    /*
+        RegularTracker tracker = get_regular_tracker(ray);
+        Float thick_bound = -std::log(1 - u);
 
+        bool sampled = false;
+        Spectrum sum(.0f);
+        Float t = tracker.get_world_t();
+
+        Float density;
+
+        TrackSegment seg;
+        while (tracker.track(&seg)) {
+            density = sampleDensity(seg.voxelIndex);
+            Float maj = density * sigma_maj[0];  // TODO Chromatic
+            Float dt = seg.dt;
+
+            if (sum[0] + maj * seg.dt > thick_bound) {
+                Float dt = (thick_bound - sum[0]) / maj;
+                sampled = true;
+            }
+
+            t += dt;
+            sum += dt * density * sigma_maj;
+
+            if (sampled) break;
+        }
+
+        maj_record->T_maj = Exp(-sum);
+        if (sampled) {
+            maj_record->p = ray(t);
+            maj_record->Le = Spectrum(.0f);
+            maj_record->phase = ARENA_ALLOC(arena, HenyeyGreenstein)(g);
+            maj_record->sigma_a = density * sigma_a;
+            maj_record->sigma_s = density * sigma_s;
+            maj_record->sigma_n = Spectrum(.0f);  // TODO
+            maj_record->t = t;
+        }
+
+        return !sampled;
+        */
+
+    DDATracker tracker = get_dda_tracker(ray);
+    Float thick_bound = -std::log(1 - u);
     bool sampled = false;
     Spectrum sum(.0f);
-    Float t = tracker.get_world_t();
+    Float t_w = tracker.get_world_t();
+    Float maj_density;
 
-    Float density;
-
-    TrackSegment seg;
+    MajorantSeg seg;
     while (tracker.track(&seg)) {
-        density = sampleDensity(seg.voxelIndex);
-        Float maj = density * sigma_maj[0];  // TODO Chromatic
-        Float dt = seg.dt;
+        int ix = seg.index[0], iy = seg.index[1], iz = seg.index[2];
+        maj_density = maj_grid->at(ix, iy, iz);
+        Float dt = seg.dt_w;
+        Float sigma_maj =
+            maj_density * (sigma_s + sigma_a)[0];  // TODO Chromatic
 
-        if (sum[0] + maj * seg.dt > thick_bound) {
-            Float dt = (thick_bound - sum[0]) / maj;
+        if (sum[0] + sigma_maj * seg.dt_w > thick_bound) {
+            dt = (thick_bound - sum[0]) / sigma_maj;
             sampled = true;
         }
 
-        t += dt;
-        sum += dt * density * sigma_maj;
+        sum += dt * sigma_maj;
+        t_w += dt;
 
         if (sampled) break;
+
+        tracker.next();
     }
 
     maj_record->T_maj = Exp(-sum);
+
     if (sampled) {
-        maj_record->p = ray(t);
+        maj_record->p = ray(t_w);
+        Float density = sampleDensity(maj_record->p);
         maj_record->Le = Spectrum(.0f);
         maj_record->phase = ARENA_ALLOC(arena, HenyeyGreenstein)(g);
         maj_record->sigma_a = density * sigma_a;
         maj_record->sigma_s = density * sigma_s;
-        maj_record->sigma_n = Spectrum(.0f);  // TODO
-        maj_record->t = t;
+        maj_record->sigma_n = (maj_density - density) * (sigma_a + sigma_s);
+        maj_record->t = t_w;
     }
 
     return !sampled;
