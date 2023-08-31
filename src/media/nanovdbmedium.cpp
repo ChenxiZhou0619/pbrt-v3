@@ -4,6 +4,28 @@
 
 namespace pbrt {
 
+Float MajorantGrid::at(int x, int y, int z) const {
+    int idx = x * resolution.y * resolution.z + y * resolution.z + z;
+    return majorants[idx];
+}
+
+Float &MajorantGrid::at(int x, int y, int z) {
+    int idx = x * resolution.y * resolution.z + y * resolution.z + z;
+    return majorants[idx];
+}
+
+int MajorantGrid::size() const {
+    return resolution.x * resolution.y * resolution.z;
+}
+
+Point3f MajorantGrid::toIndex(Point3f p_world) const {
+    Float ix_f = (p_world[0] - world_bound.pMin[0]) / voxel_size_w[0],
+          iy_f = (p_world[1] - world_bound.pMin[1]) / voxel_size_w[1],
+          iz_f = (p_world[2] - world_bound.pMin[2]) / voxel_size_w[2];
+
+    return Point3f(ix_f, iy_f, iz_f);
+}
+
 RegularTracker::RegularTracker(const int minIndex[3], const int maxIndex[3],
                                Point3f origin, Vector3f direction, Float cur_t,
                                Float tmax, Float voxel_size)
@@ -172,6 +194,34 @@ RegularTracker NanovdbMedium::get_regular_tracker(Ray ray_world) const {
                           scaled_voxel_size);
 }
 
+DDATracker NanovdbMedium::get_dda_tracker(Ray ray_world) const {
+    // Check if ray_world intersect the maj_grid
+    Point3f pmin = maj_grid->world_bound.pMin,
+            pmax = maj_grid->world_bound.pMax;
+    Float t_min = -Infinity, t_max = Infinity;
+    Point3f origin = ray_world.o;
+    Vector3f direction = ray_world.d;
+
+    for (int axis = 0; axis < 3; ++axis) {
+        if (direction[axis] == 0) continue;
+
+        Float t_0 = (pmin[axis] - origin[axis]) / direction[axis],
+              t_1 = (pmax[axis] - origin[axis]) / direction[axis];
+        if (t_0 > t_1) std::swap(t_0, t_1);
+        t_min = std::max(t_min, t_0);
+        t_max = std::min(t_max, t_1);
+
+        if (t_min > t_max || t_max < 0)
+            return DDATracker(true);  // Just terminate
+    }
+
+    Float cur_t_w = t_min > 0 ? t_min : 0;
+    Point3f pIndex = maj_grid->toIndex(origin + direction * cur_t_w);
+
+    return DDATracker(maj_grid->resolution, pIndex, direction,
+                      maj_grid->voxel_size_w, cur_t_w, ray_world.tMax);
+}
+
 Point3f NanovdbMedium::worldToIndex(Point3f p_world) const {
     p_world = Inverse(medium_transform)(p_world);
     auto p_index = densityFloatGrid->worldToIndexF(
@@ -184,6 +234,12 @@ Vector3f NanovdbMedium::worldToIndex(Vector3f d_world) const {
     auto d_index = densityFloatGrid->worldToIndexDirF(
         nanovdb::Vec3f(d_world[0], d_world[1], d_world[2]));
     return Vector3f{d_index[0], d_index[1], d_index[2]};
+}
+
+Point3f NanovdbMedium::indexToWorld(Point3f p_index) const {
+    auto p_world = densityFloatGrid->indexToWorldF(
+        nanovdb::Vec3f(p_index[0], p_index[1], p_index[2]));
+    return medium_transform(Point3f(p_world[0], p_world[1], p_world[2]));
 }
 
 }  // namespace pbrt
