@@ -21,10 +21,6 @@ class VolPathIntegratorV4 : public SamplerIntegrator {
     Spectrum Li(const RayDifferential &ray, const Scene &scene,
                 Sampler &sampler, MemoryArena &arena, int depth) const;
 
-  protected:
-    Spectrum SampleVolumeLd(const Interaction &it, const Scene &scene,
-                            MemoryArena &arena, Sampler &sampler) const;
-
   private:
     const int maxDepth;
     const Float rrThreshold;

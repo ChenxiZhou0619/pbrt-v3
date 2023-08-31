@@ -122,6 +122,7 @@
 
 // New plugins
 #include "integrators/volpath-v4.h"
+#include "media/nanovdbmedium.h"
 namespace pbrt {
 
 // API Global Variables
@@ -736,7 +737,19 @@ std::shared_ptr<Medium> MakeMedium(const std::string &name,
                                 Scale(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
         m = new GridDensityMedium(sig_a, sig_s, g, nx, ny, nz,
                                   medium2world * data2Medium, data);
-    } else
+    } else if (name == "nanovdb") {
+        std::string vdbfilename = paramSet.FindOneFilename("file", "");
+        Float density_scale = paramSet.FindOneFloat("density_scale", 1.0);
+        Spectrum sigma_a = paramSet.FindOneSpectrum("sigma_a", Spectrum(1.f));
+        Spectrum sigma_s = paramSet.FindOneSpectrum("sigma_s", Spectrum(1.f));
+        Float g = paramSet.FindOneFloat("g", .0f);
+
+        m = new NanovdbMedium(vdbfilename, density_scale, sigma_a, sigma_s, g,
+                              medium2world);
+
+    }
+
+    else
         Warning("Medium \"%s\" unknown.", name.c_str());
     paramSet.ReportUnused();
     return std::shared_ptr<Medium>(m);

@@ -13,65 +13,6 @@ void VolPathIntegratorV4::Preprocess(const Scene &scene, Sampler &sampler) {
         CreateLightSampleDistribution(lightSampleStrategy, scene);
 }
 
-Spectrum VolPathIntegratorV4::SampleVolumeLd(const Interaction &it,
-                                             const Scene &scene,
-                                             MemoryArena &arena,
-                                             Sampler &sampler) const {
-    const Point3f center{0, 0.5, 0};
-    constexpr Float radius = 0.2;
-
-    // random sample a point in sphere (respective to volume)
-    auto uniform_sample_in_sphere = [&](Point3f shading_p, Point3f _center,
-                                        Float _radius, Float *_pdf) -> Point3f {
-        Float r_u = sampler.Get1D();
-        Float phi_u = sampler.Get1D(), theta_u = sampler.Get1D();
-
-        Float r = _radius * std::pow(r_u, 1.0 / 3.0);
-        Float phi = 2 * M_PI * phi_u;
-        Float cos_theta = 1 - 2 * theta_u,
-              sin_theta = std::sqrt(std::max(1.0 - cos_theta * cos_theta, .0));
-
-        Vector3f p_local{sin_theta * r * std::cos(phi), cos_theta * r,
-                         sin_theta * r * std::sin(phi)};
-        Point3f p_e = _center + p_local;
-
-        // Compute the sampling pdf respective to solid angle
-        Float dist_sqr = (p_e - shading_p).LengthSquared();
-        *_pdf = 3.0 / (4 * M_PI * _radius * _radius * _radius) * dist_sqr;
-
-        return p_e;
-    };
-
-    Float pdf_pe = .0;
-    Point3f p_e = uniform_sample_in_sphere(it.p, center, radius, &pdf_pe);
-
-    MediumInteraction mi;
-    mi.p = p_e;
-    VisibilityTester vis{it, mi};
-
-    Vector3f wi = Normalize(p_e - it.p);
-
-    Spectrum f, Tr;
-    Float misw;
-
-    if (it.IsSurfaceInteraction()) {
-        const SurfaceInteraction &isect = (const SurfaceInteraction &)it;
-        f = isect.bsdf->f(isect.wo, wi) * AbsDot(wi, isect.shading.n);
-        Tr = vis.Tr(scene, sampler);
-
-        Float pdf_wi = isect.bsdf->Pdf(isect.wo, wi);
-        Float pdf_t = Tr[0] * Spectrum(1.f)[0];
-        Float pdf_1 = pdf_pe, pdf_2 = pdf_wi * pdf_t;
-        misw = pdf_1 / (pdf_1 + pdf_2);
-    } else {
-        // TODO Volumetric scattering
-    }
-
-    // TODO Hard code here
-
-    return f * Tr * Spectrum(1.f) * Spectrum(1.f) / pdf_pe * misw;
-}
-
 Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                                  Sampler &sampler, MemoryArena &arena,
                                  int depth) const {
@@ -115,17 +56,7 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                         Spectrum betap = beta * T_maj / pdf;
 
                         if (!betap.IsBlack()) {
-                            if (bounces == 0 || specular_bounce)
-                                L += betap * sigma_a * Le;
-                            else {
-                                // MIS
-                                Float pdf_1 = prev_scatter_pdf * pdf;
-                                Float pdf_2 =
-                                    3 / (4 * M_PI * 0.2 * 0.2 * 0.2 *
-                                         (p - prev_shading_p).LengthSquared());
-                                Float misw = pdf_1 / (pdf_1 + pdf_2);
-                                L += betap * sigma_a * Le * misw;
-                            }
+                            L += betap * sigma_a * Le;
                         }
                     }
 
@@ -151,7 +82,7 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                         terminated = true;
                         return false;
                     } else if (mode == 1 /* Scatter */) {
-                        if (depth++ > maxDepth) {
+                        if (depth >= maxDepth) {
                             terminated = true;
                             return false;
                         }
@@ -164,7 +95,16 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                             // handle real scatter
                             const Distribution1D *lightDistrib =
                                 lightDistribution->Lookup(p);
-                            // TODO
+                            MediumInteraction mi(maj_rec.p, -ray.d, ray.time,
+                                                 ray.medium, maj_rec.phase);
+                            L += beta * UniformSampleOneLight(mi, scene, arena,
+                                                              sampler, true,
+                                                              lightDistrib);
+                            Vector3f wo = -ray.d, wi;
+                            mi.phase->Sample_p(wo, &wi, sampler.Get2D());
+                            ray = mi.SpawnRay(wi);
+                            specular_bounce = false;
+                            scattered = true;
                         }
 
                         return false;
@@ -199,10 +139,6 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
         const Distribution1D *lightDistrib = lightDistribution->Lookup(isect.p);
         L += beta * UniformSampleOneLight(isect, scene, arena, sampler, true,
                                           lightDistrib);
-
-        L += beta * SampleVolumeLd(isect, scene, arena, sampler);
-
-        // Sampling volumetric emission
 
         Vector3f wo = -ray.d, wi;
         Float pdf;

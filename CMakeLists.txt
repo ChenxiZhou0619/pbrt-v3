@@ -4,6 +4,9 @@
 
 CMAKE_MINIMUM_REQUIRED ( VERSION 3.1.0 )
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+SET(CMAKE_CXX_STANDARD 14)
+
+
 # For sanitizers
 SET (CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 
@@ -364,6 +367,14 @@ SET_PROPERTY(TARGET Ptex_static ptxinfo halftest ftest rtest wtest PROPERTY FOLD
 INCLUDE_DIRECTORIES ( src/ext/ptex/src/ptex )
 
 ###########################################################################
+#nanovdb
+
+INCLUDE_DIRECTORIES(src/ext/nanovdb)
+
+#nothing else
+
+
+
 # On to pbrt...
 
 SET ( PBRT_CORE_SOURCE
