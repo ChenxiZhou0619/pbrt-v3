@@ -46,7 +46,6 @@ struct MajorantGrid {
 };
 
 struct MajorantSeg {
-    Float t_w;
     Float dt_w;
     Vector3i index;
 };
@@ -154,6 +153,7 @@ class NanovdbMedium : public Medium {
           density_scale(density_scale),
           sigma_a(sigma_a),
           sigma_s(sigma_s),
+          sigma_t(sigma_a + sigma_s),
           medium_transform(medium_transform) {
         // Read the nanovdb file
 
@@ -182,7 +182,6 @@ class NanovdbMedium : public Medium {
             std::cerr << "Only support cube voxel!\n";
             exit(1);
         }
-        voxel_size = vs[0];
 
         // Initialize maj_grid
         Point3f bound_min = indexToWorld(
@@ -233,7 +232,8 @@ class NanovdbMedium : public Medium {
     Spectrum Sample(const Ray &ray, Sampler &sampler, MemoryArena &arena,
                     MediumInteraction *mi) const;
 
-    bool SampleT_maj(const RayDifferential &ray, Float u, MemoryArena &arena,
+    bool SampleT_maj(const RayDifferential &ray, Float u_t, Float u_channel,
+                     MemoryArena &arena,
                      MajorantSampleRecord *maj_record) const;
 
   protected:
@@ -256,10 +256,8 @@ class NanovdbMedium : public Medium {
     Float g;
 
     Float density_scale;
-    Spectrum sigma_a, sigma_s;
+    Spectrum sigma_a, sigma_s, sigma_t;
     Transform medium_transform;
-
-    Float voxel_size;
 
     nanovdb::GridHandle<BufferT> densityGrid;
     nanovdb::GridHandle<BufferT> temperatureGrid;

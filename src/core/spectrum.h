@@ -146,8 +146,8 @@ class CoefficientSpectrum {
         DCHECK(!s2.HasNaNs());
         CoefficientSpectrum ret = *this;
         for (int i = 0; i < nSpectrumSamples; ++i) {
-          CHECK_NE(s2.c[i], 0);
-          ret.c[i] /= s2.c[i];
+            CHECK_NE(s2.c[i], 0);
+            ret.c[i] /= s2.c[i];
         }
         return ret;
     }
@@ -247,8 +247,7 @@ class CoefficientSpectrum {
     }
     Float MaxComponentValue() const {
         Float m = c[0];
-        for (int i = 1; i < nSpectrumSamples; ++i)
-            m = std::max(m, c[i]);
+        for (int i = 1; i < nSpectrumSamples; ++i) m = std::max(m, c[i]);
         return m;
     }
     bool HasNaNs() const {
@@ -509,6 +508,11 @@ inline SampledSpectrum Lerp(Float t, const SampledSpectrum &s1,
 void ResampleLinearSpectrum(const Float *lambdaIn, const Float *vIn, int nIn,
                             Float lambdaMin, Float lambdaMax, int nOut,
                             Float *vOut);
+
+inline Float AverageRGB(Spectrum rgb_spectrum) {
+    constexpr float f = 1.0 / 3;
+    return (rgb_spectrum[0] + rgb_spectrum[1] + rgb_spectrum[2]) * f;
+}
 
 }  // namespace pbrt
 

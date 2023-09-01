@@ -75,10 +75,10 @@ Spectrum HomogeneousMedium::Sample(const Ray &ray, Sampler &sampler,
     return sampledMedium ? (Tr * sigma_s / pdf) : (Tr / pdf);
 }
 
-bool HomogeneousMedium::SampleT_maj(const RayDifferential &ray, Float u,
-                                    MemoryArena &arena,
+bool HomogeneousMedium::SampleT_maj(const RayDifferential &ray, Float u_t,
+                                    Float u_channel, MemoryArena &arena,
                                     MajorantSampleRecord *maj_record) const {
-    Float dist = -std::log(1 - u) / sigma_t[0];
+    Float dist = -std::log(1 - u_t) / sigma_t[0];
     Float t = std::min(dist / ray.d.Length(), ray.tMax);
     bool sampledMedium = t < ray.tMax;
     if (sampledMedium) {
@@ -95,7 +95,7 @@ bool HomogeneousMedium::SampleT_maj(const RayDifferential &ray, Float u,
         maj_record->T_maj =
             Exp(-sigma_t * std::min(t, MaxFloat) * ray.d.Length());
     }
-
+    maj_record->channel = 0;  // TODO
     return !sampledMedium;
 }
 

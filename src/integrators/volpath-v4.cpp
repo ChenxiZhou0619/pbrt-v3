@@ -8,6 +8,7 @@
 #include "stats.h"
 
 namespace pbrt {
+
 void VolPathIntegratorV4::Preprocess(const Scene &scene, Sampler &sampler) {
     lightDistribution =
         CreateLightSampleDistribution(lightSampleStrategy, scene);
@@ -45,6 +46,7 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                              sigma_maj = sigma_a + sigma_s + sigma_n,
                              Le = maj_rec.Le;
                     Point3f p = maj_rec.p;
+                    int channel = maj_rec.channel;
 
                     if (beta.IsBlack()) {
                         terminated = true;
@@ -52,16 +54,17 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                     }
 
                     if (bounces < maxDepth && !maj_rec.Le.IsBlack()) {
-                        Float pdf = T_maj[0] * sigma_maj[0];
-                        Spectrum betap = beta * T_maj / pdf;
+                        Float pdf = T_maj[channel] * sigma_maj[channel];
+                        Spectrum betap = beta * T_maj / pdf,
+                                 r_e = sigma_maj * T_maj / pdf;
 
                         if (!betap.IsBlack()) {
-                            L += betap * sigma_a * Le;
+                            L += betap * sigma_a * Le / AverageRGB(r_e);
                         }
                     }
 
-                    Float p_absorb = sigma_a[0] / sigma_maj[0];
-                    Float p_scatter = sigma_s[0] / sigma_maj[0];
+                    Float p_absorb = sigma_a[channel] / sigma_maj[channel];
+                    Float p_scatter = sigma_s[channel] / sigma_maj[channel];
                     // Float p_null = std::max<Float>(0, 1 - p_absorb -
                     // p_scatter);
 
@@ -82,14 +85,14 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                         terminated = true;
                         return false;
                     } else if (mode == 1 /* Scatter */) {
-                        if (depth >= maxDepth) {
+                        if (bounces >= maxDepth) {
                             terminated = true;
                             return false;
                         }
-
-                        Float pdf = T_maj[0] * sigma_s[0];
+                        Float pdf = T_maj[channel] * sigma_s[channel];
                         beta *= T_maj * sigma_s / pdf;
-                        r_u *= T_maj * sigma_s / pdf;
+                        // / AverageRGB(T_maj * sigma_s);
+                        //                        r_u *= T_maj * sigma_s / pdf;
 
                         if (!beta.IsBlack()) {
                             // handle real scatter
@@ -110,8 +113,7 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                         return false;
 
                     } else {
-                        Spectrum sigma_n = maj_rec.sigma_n;  // TODO Chromatic
-                        Float pdf = T_maj[0] * sigma_n[0];
+                        Float pdf = AverageRGB(T_maj * sigma_n);
                         beta *= T_maj * sigma_n / pdf;
                         if (pdf == 0) beta = Spectrum(.0f);
                         return !beta.IsBlack();
@@ -121,7 +123,7 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
             if (terminated || beta.IsBlack()) return L;
             if (scattered) continue;
 
-            beta *= T_maj / T_maj[0];
+            beta *= T_maj / AverageRGB(T_maj);
         }
 
         if (bounces == 0 || specular_bounce) {

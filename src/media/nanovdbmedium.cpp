@@ -43,22 +43,16 @@ bool DDATracker::track(MajorantSeg *seg) {
         /* Terminate in current voxel */
         terminate = true;
         dt_w = t_max_w - cur_t_w;
-        //        cur_t_w = t_max_w;
+
     } else {
         dt_w = next_crossingT_w[step_axis] - cur_t_w;
-        // cur_t_w = next_crossingT_w[step_axis];
     }
 
     seg->index[0] = cur_index[0];
     seg->index[1] = cur_index[1];
     seg->index[2] = cur_index[2];
     seg->dt_w = dt_w;
-    seg->t_w = cur_t_w;
 
-    // cur_index[step_axis] += step[step_axis];
-    // next_crossingT_w[step_axis] += delta_t_w[step_axis];
-    //
-    // if (cur_index[step_axis] == voxel_limit[step_axis]) terminate = true;
     return true;
 }
 
@@ -142,51 +136,71 @@ bool RegularTracker::track(TrackSegment *seg) {
     return true;
 }
 
-Spectrum NanovdbMedium::Tr(const Ray &ray, Sampler &sampler) const {
-    /*    RegularTracker tracker = get_regular_tracker(ray);
-        Spectrum thick(.0f);
-        TrackSegment seg;
-        while (tracker.track(&seg)) {
-            Float density = sampleDensity(seg.voxelIndex);
-            thick += density * sigma_maj * seg.dt;
-        }
-        return Exp(-thick);
-    */
-    Spectrum tr(1.f);
+Spectrum NanovdbMedium::Tr(const Ray &_ray, Sampler &sampler) const {
+    int channel = SampleChannel(sampler.Get1D());
+    Ray ray = _ray;
+    ray.tMax *= ray.d.Length();
+    ray.d = Normalize(ray.d);
+
     DDATracker tracker = get_dda_tracker(ray);
+    Spectrum tr(1.f);
+
     Float thick_bound = -std::log(1 - sampler.Get1D());
-    Float sum = .0;
+    Spectrum sum(.0);
     Float t_w = tracker.get_world_t();
+
+    Spectrum weight(1.0);  // mis weight
 
     MajorantSeg seg;
     while (tracker.track(&seg)) {
         int ix = seg.index[0], iy = seg.index[1], iz = seg.index[2];
         Float maj_density = maj_grid->at(ix, iy, iz);
         Float dt = seg.dt_w;
-        Float sigma_maj =
-            maj_density * (sigma_s + sigma_a)[0];  // TODO Chromatic
+        Spectrum sigma_maj = maj_density * sigma_t;
 
-        if (sum + sigma_maj * seg.dt_w > thick_bound) {
-            dt = (thick_bound - sum) / sigma_maj;
+        if (sum[channel] + sigma_maj[channel] * seg.dt_w > thick_bound) {
+            dt = (thick_bound - sum[channel]) / sigma_maj[channel];
             t_w += dt;
+            sum += dt * sigma_maj;
 
             Float density = sampleDensity(ray(t_w));
-            Float ratio = (maj_density - density) / maj_density;
-            tr *= ratio;
 
-            sum = .0f;
+            Spectrum sigma_n = (maj_density - density) * sigma_t,
+                     T_maj = Exp(-sum);
+
+            Float pdf = T_maj[channel] * sigma_maj[channel];
+
+            tr *= T_maj * sigma_n / pdf;
+            weight *= T_maj * sigma_n / pdf;
+
+            sum = Spectrum(.0f);
             thick_bound = -std::log(1 - sampler.Get1D());
             tracker.march(dt);
+
+            if (tr.IsBlack()) return Spectrum(.0);
+
+            // if (tr.MaxComponentValue() < 0.1) {
+            //     if (sampler.Get1D() < 0.75) {
+            //         return Spectrum(.0);
+            //     }
+            //     tr /= 1 - 0.75;
+            // }
+
             continue;
         }
-
         sum += dt * sigma_maj;
         t_w += dt;
 
         tracker.next();
     }
 
-    return tr;
+    Spectrum T_maj = Exp(-sum);
+    Float pdf = T_maj[channel];
+
+    tr *= T_maj / pdf;
+    weight *= T_maj / pdf;
+
+    return tr;  // / AverageRGB(weight);
 }
 
 Spectrum NanovdbMedium::Sample(const Ray &ray, Sampler &sampler,
@@ -202,93 +216,60 @@ Float NanovdbMedium::sampleDensity(Point3f p_world) const {
     return Sampler(densityFloatGrid->tree())(p_index) * density_scale;
 }
 
-bool NanovdbMedium::SampleT_maj(const RayDifferential &ray, Float u,
-                                MemoryArena &arena,
+bool NanovdbMedium::SampleT_maj(const RayDifferential &_ray, Float u_t,
+                                Float u_channel, MemoryArena &arena,
                                 MajorantSampleRecord *maj_record) const {
     // \sum dt * sigma_maj = - log(1 - u)
-    /*
-        RegularTracker tracker = get_regular_tracker(ray);
-        Float thick_bound = -std::log(1 - u);
 
-        bool sampled = false;
-        Spectrum sum(.0f);
-        Float t = tracker.get_world_t();
-
-        Float density;
-
-        TrackSegment seg;
-        while (tracker.track(&seg)) {
-            density = sampleDensity(seg.voxelIndex);
-            Float maj = density * sigma_maj[0];  // TODO Chromatic
-            Float dt = seg.dt;
-
-            if (sum[0] + maj * seg.dt > thick_bound) {
-                Float dt = (thick_bound - sum[0]) / maj;
-                sampled = true;
-            }
-
-            t += dt;
-            sum += dt * density * sigma_maj;
-
-            if (sampled) break;
-        }
-
-        maj_record->T_maj = Exp(-sum);
-        if (sampled) {
-            maj_record->p = ray(t);
-            maj_record->Le = Spectrum(.0f);
-            maj_record->phase = ARENA_ALLOC(arena, HenyeyGreenstein)(g);
-            maj_record->sigma_a = density * sigma_a;
-            maj_record->sigma_s = density * sigma_s;
-            maj_record->sigma_n = Spectrum(.0f);  // TODO
-            maj_record->t = t;
-        }
-
-        return !sampled;
-        */
+    Ray ray = _ray;
+    ray.tMax *= ray.d.Length();
+    ray.d = Normalize(ray.d);
 
     DDATracker tracker = get_dda_tracker(ray);
-    Float thick_bound = -std::log(1 - u);
-    bool sampled = false;
+
+    Float thick_bound = -std::log(1 - u_t);
     Spectrum sum(.0f);
     Float t_w = tracker.get_world_t();
     Float maj_density;
 
+    int channel = SampleChannel(u_channel);
+    maj_record->channel = channel;
+
     MajorantSeg seg;
+
     while (tracker.track(&seg)) {
         int ix = seg.index[0], iy = seg.index[1], iz = seg.index[2];
         maj_density = maj_grid->at(ix, iy, iz);
         Float dt = seg.dt_w;
-        Float sigma_maj =
-            maj_density * (sigma_s + sigma_a)[0];  // TODO Chromatic
+        Spectrum sigma_maj = maj_density * sigma_t;
 
-        if (sum[0] + sigma_maj * seg.dt_w > thick_bound) {
-            dt = (thick_bound - sum[0]) / sigma_maj;
-            sampled = true;
+        if (sum[channel] + sigma_maj[channel] * seg.dt_w > thick_bound) {
+            dt = (thick_bound - sum[channel]) / sigma_maj[channel];
+
+            //* Sample the information at sampled point
+            t_w += dt;
+            sum += dt * maj_density * sigma_t;
+
+            maj_record->T_maj = Exp(-sum);
+            maj_record->p = ray(t_w);
+            Float density = sampleDensity(maj_record->p);
+            maj_record->Le = Spectrum(.0f);
+            maj_record->phase = ARENA_ALLOC(arena, HenyeyGreenstein)(g);
+            maj_record->sigma_a = density * sigma_a;
+            maj_record->sigma_s = density * sigma_s;
+            maj_record->sigma_n = (maj_density - density) * sigma_t;
+            maj_record->t = t_w;
+            return false;  // not escape from current medium
         }
 
         sum += dt * sigma_maj;
         t_w += dt;
 
-        if (sampled) break;
-
         tracker.next();
     }
 
     maj_record->T_maj = Exp(-sum);
-
-    if (sampled) {
-        maj_record->p = ray(t_w);
-        Float density = sampleDensity(maj_record->p);
-        maj_record->Le = Spectrum(.0f);
-        maj_record->phase = ARENA_ALLOC(arena, HenyeyGreenstein)(g);
-        maj_record->sigma_a = density * sigma_a;
-        maj_record->sigma_s = density * sigma_s;
-        maj_record->sigma_n = (maj_density - density) * (sigma_a + sigma_s);
-        maj_record->t = t_w;
-    }
-
-    return !sampled;
+    return true;  // escape the current medium
 }
 
 RegularTracker NanovdbMedium::get_regular_tracker(Ray ray_world) const {
@@ -333,6 +314,9 @@ DDATracker NanovdbMedium::get_dda_tracker(Ray ray_world) const {
     Float t_min = -Infinity, t_max = Infinity;
     Point3f origin = ray_world.o;
     Vector3f direction = ray_world.d;
+
+    //    ray_world.tMax *= ray_world.d.Length();
+    //    Vector3f direction = Normalize(ray_world.d);
 
     for (int axis = 0; axis < 3; ++axis) {
         if (direction[axis] == 0) continue;

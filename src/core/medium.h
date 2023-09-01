@@ -79,6 +79,7 @@ struct MajorantSampleRecord {
     Spectrum sigma_a, sigma_s, sigma_n, Le;
     Point3f p;
     Float t;
+    int channel;
 };
 
 // Medium Declarations
@@ -91,8 +92,8 @@ class Medium {
                             MemoryArena &arena,
                             MediumInteraction *mi) const = 0;
 
-    virtual bool SampleT_maj(const RayDifferential &ray, Float u,
-                             MemoryArena &arena,
+    virtual bool SampleT_maj(const RayDifferential &ray, Float u_t,
+                             Float u_channel, MemoryArena &arena,
                              MajorantSampleRecord *maj_record) const = 0;
 };
 
@@ -135,8 +136,8 @@ Spectrum SampleT_maj(RayDifferential ray, Float tmax, RNG &rng,
         MajorantSampleRecord maj_record;
 
         // The ray escape the medium
-        bool terminate =
-            medium->SampleT_maj(ray, rng.UniformFloat(), arena, &maj_record);
+        bool terminate = medium->SampleT_maj(
+            ray, rng.UniformFloat(), rng.UniformFloat(), arena, &maj_record);
         if (terminate) return maj_record.T_maj;
 
         // Handle the interaction at majorant sampling point
@@ -149,6 +150,15 @@ Spectrum SampleT_maj(RayDifferential ray, Float tmax, RNG &rng,
     }
 
     return Spectrum(1.f);
+}
+
+inline int SampleChannel(Float u_channel) {
+    u_channel *= 3;
+    if (u_channel <= 1)
+        return 0;
+    else if (u_channel <= 2)
+        return 1;
+    return 2;
 }
 
 }  // namespace pbrt

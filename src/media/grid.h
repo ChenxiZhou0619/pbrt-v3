@@ -86,7 +86,8 @@ class GridDensityMedium : public Medium {
                     MediumInteraction *mi) const;
     Spectrum Tr(const Ray &ray, Sampler &sampler) const;
 
-    bool SampleT_maj(const RayDifferential &ray, Float u, MemoryArena &arena,
+    bool SampleT_maj(const RayDifferential &ray, Float u_t, Float u_channel,
+                     MemoryArena &arena,
                      MajorantSampleRecord *maj_record) const {
         // TODO
     }
