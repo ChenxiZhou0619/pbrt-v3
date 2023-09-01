@@ -189,7 +189,8 @@ class NanovdbMedium : public Medium {
                 bound_max = indexToWorld(Point3f(
                     maxIndex[0] + 1.0, maxIndex[1] + 1.0, maxIndex[2] + 1.0));
         Bounds3f medium_worldbound{bound_min, bound_max};
-        maj_grid = std::make_unique<MajorantGrid>(medium_worldbound);
+        maj_grid = std::make_unique<MajorantGrid>(medium_worldbound,
+                                                  Vector3i{16, 16, 16});
 
         {
             int X = maj_grid->resolution.x, Y = maj_grid->resolution.y,
@@ -239,6 +240,8 @@ class NanovdbMedium : public Medium {
   protected:
     Float sampleDensity(Point3f p_world) const;
 
+    Float sampleTemperature(Point3f p_world) const;
+
     // Transform a world point to medium local coordinate
     Point3f worldToIndex(Point3f p_world) const;
 
@@ -251,6 +254,8 @@ class NanovdbMedium : public Medium {
     RegularTracker get_regular_tracker(Ray ray_world) const;
 
     DDATracker get_dda_tracker(Ray ray_world) const;
+
+    Spectrum Le(Point3f p_world) const;
 
   private:
     Float g;

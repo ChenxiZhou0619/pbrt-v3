@@ -171,7 +171,7 @@ Spectrum NanovdbMedium::Tr(const Ray &_ray, Sampler &sampler) const {
             Float pdf = T_maj[channel] * sigma_maj[channel];
 
             tr *= T_maj * sigma_n / pdf;
-            weight *= T_maj * sigma_n / pdf;
+            weight *= T_maj * sigma_maj / pdf;
 
             sum = Spectrum(.0f);
             thick_bound = -std::log(1 - sampler.Get1D());
@@ -179,12 +179,12 @@ Spectrum NanovdbMedium::Tr(const Ray &_ray, Sampler &sampler) const {
 
             if (tr.IsBlack()) return Spectrum(.0);
 
-            // if (tr.MaxComponentValue() < 0.1) {
-            //     if (sampler.Get1D() < 0.75) {
-            //         return Spectrum(.0);
-            //     }
-            //     tr /= 1 - 0.75;
-            // }
+            if (tr.MaxComponentValue() < 0.1) {
+                if (sampler.Get1D() < 0.75) {
+                    return Spectrum(.0);
+                }
+                tr /= 1 - 0.75;
+            }
 
             continue;
         }
@@ -200,7 +200,7 @@ Spectrum NanovdbMedium::Tr(const Ray &_ray, Sampler &sampler) const {
     tr *= T_maj / pdf;
     weight *= T_maj / pdf;
 
-    return tr;  // / AverageRGB(weight);
+    return tr / AverageRGB(weight);
 }
 
 Spectrum NanovdbMedium::Sample(const Ray &ray, Sampler &sampler,
@@ -214,6 +214,21 @@ Float NanovdbMedium::sampleDensity(Point3f p_world) const {
         nanovdb::SampleFromVoxels<nanovdb::FloatGrid::TreeType, 1, false>;
     auto p_index = worldToIndex(p_world);
     return Sampler(densityFloatGrid->tree())(p_index) * density_scale;
+}
+
+Float NanovdbMedium::sampleTemperature(Point3f p_world) const {
+    if (!temperatureFloatGrid) return .0;
+
+    auto worldToTemperatureIndex = [&](Point3f p_world) {
+        p_world = Inverse(medium_transform)(p_world);
+        auto p_index = temperatureFloatGrid->worldToIndexF(
+            nanovdb::Vec3f(p_world[0], p_world[1], p_world[2]));
+        return Point3f{p_index[0], p_index[1], p_index[2]};
+    };
+    using Sampler =
+        nanovdb::SampleFromVoxels<nanovdb::FloatGrid::TreeType, 1, false>;
+    auto p_index = worldToIndex(p_world);
+    return Sampler(temperatureFloatGrid->tree())(p_index);
 }
 
 bool NanovdbMedium::SampleT_maj(const RayDifferential &_ray, Float u_t,
@@ -356,6 +371,15 @@ Point3f NanovdbMedium::indexToWorld(Point3f p_index) const {
     auto p_world = densityFloatGrid->indexToWorldF(
         nanovdb::Vec3f(p_index[0], p_index[1], p_index[2]));
     return medium_transform(Point3f(p_world[0], p_world[1], p_world[2]));
+}
+
+Spectrum NanovdbMedium::Le(Point3f p_world) const {
+    Float temperature = sampleTemperature(p_world);
+    // TODO temperature operation
+    if (temperature <= 100.0) return Spectrum(.0);
+
+    // Compute blackbody
+    SampledSpectrum blackbody_emission_spectrum;
 }
 
 }  // namespace pbrt

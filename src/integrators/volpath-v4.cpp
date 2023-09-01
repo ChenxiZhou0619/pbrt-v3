@@ -90,9 +90,8 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                             return false;
                         }
                         Float pdf = T_maj[channel] * sigma_s[channel];
-                        beta *= T_maj * sigma_s / pdf;
-                        // / AverageRGB(T_maj * sigma_s);
-                        //                        r_u *= T_maj * sigma_s / pdf;
+                        Spectrum weight = T_maj * sigma_s / pdf;
+                        beta *= T_maj * sigma_s / pdf / AverageRGB(weight);
 
                         if (!beta.IsBlack()) {
                             // handle real scatter
@@ -113,7 +112,9 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                         return false;
 
                     } else {
-                        Float pdf = AverageRGB(T_maj * sigma_n);
+                        //                        Float pdf = AverageRGB(T_maj *
+                        //                        sigma_n);
+                        Float pdf = (T_maj * sigma_n)[channel];
                         beta *= T_maj * sigma_n / pdf;
                         if (pdf == 0) beta = Spectrum(.0f);
                         return !beta.IsBlack();
@@ -123,6 +124,7 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
             if (terminated || beta.IsBlack()) return L;
             if (scattered) continue;
 
+            //            beta *= T_maj / AverageRGB(T_maj);
             beta *= T_maj / AverageRGB(T_maj);
         }
 
