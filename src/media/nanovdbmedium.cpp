@@ -228,7 +228,10 @@ Float NanovdbMedium::sampleTemperature(Point3f p_world) const {
     using Sampler =
         nanovdb::SampleFromVoxels<nanovdb::FloatGrid::TreeType, 1, false>;
     auto p_index = worldToIndex(p_world);
-    return Sampler(temperatureFloatGrid->tree())(p_index);
+    Float temp = Sampler(temperatureFloatGrid->tree())(p_index);
+
+    temp = (temp - temperature_offset) * temperature_scale;
+    return temp;
 }
 
 bool NanovdbMedium::SampleT_maj(const RayDifferential &_ray, Float u_t,
@@ -268,7 +271,8 @@ bool NanovdbMedium::SampleT_maj(const RayDifferential &_ray, Float u_t,
             maj_record->T_maj = Exp(-sum);
             maj_record->p = ray(t_w);
             Float density = sampleDensity(maj_record->p);
-            maj_record->Le = Spectrum(.0f);
+            //            maj_record->Le = Spectrum(.0f);
+            maj_record->Le = Le(maj_record->p);
             maj_record->phase = ARENA_ALLOC(arena, HenyeyGreenstein)(g);
             maj_record->sigma_a = density * sigma_a;
             maj_record->sigma_s = density * sigma_s;
@@ -375,11 +379,28 @@ Point3f NanovdbMedium::indexToWorld(Point3f p_index) const {
 
 Spectrum NanovdbMedium::Le(Point3f p_world) const {
     Float temperature = sampleTemperature(p_world);
+
     // TODO temperature operation
     if (temperature <= 100.0) return Spectrum(.0);
 
-    // Compute blackbody
+    // Compute blackbody emission at 12 sampled wavelength
     SampledSpectrum blackbody_emission_spectrum;
+
+    constexpr int N_wavelengths = 12;
+    constexpr Float sampled_wavelength[]{400.0,  427.27, 454.54, 481.82,
+                                         509.10, 536.36, 563.64, 590.91,
+                                         618.18, 645.45, 672.72, 700.0};
+    Float Le_lambda[12];
+
+    BlackbodyNormalized(sampled_wavelength, N_wavelengths, temperature,
+                        Le_lambda);
+
+    blackbody_emission_spectrum = SampledSpectrum::FromSampled(
+        sampled_wavelength, Le_lambda, N_wavelengths);
+
+    auto rgb = blackbody_emission_spectrum.ToRGBSpectrum();
+    for (int i = 0; i < 3; ++i) rgb[i] = std::max(.0f, rgb[i]);
+    return rgb * Le_scale;
 }
 
 }  // namespace pbrt

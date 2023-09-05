@@ -30,9 +30,9 @@
 
  */
 
-
 // core/spectrum.cpp*
 #include "spectrum.h"
+
 #include <algorithm>
 
 namespace pbrt {
@@ -941,7 +941,7 @@ void Blackbody(const Float *lambda, int n, Float T, Float *Le) {
         for (int i = 0; i < n; ++i) Le[i] = 0.f;
         return;
     }
-    const Float c = 299792458;
+    const Float c = 299792458.0;
     const Float h = 6.62606957e-34;
     const Float kb = 1.3806488e-23;
     for (int i = 0; i < n; ++i) {

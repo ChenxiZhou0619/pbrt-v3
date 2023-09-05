@@ -59,7 +59,7 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                                  r_e = sigma_maj * T_maj / pdf;
 
                         if (!betap.IsBlack()) {
-                            L += betap * sigma_a * Le / AverageRGB(r_e);
+                            L += betap * sigma_a * Le;  // / AverageRGB(r_e);
                         }
                     }
 
@@ -121,7 +121,7 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                     }
                 });
 
-            if (terminated || beta.IsBlack()) return L;
+            if (terminated || beta.IsBlack()) break;
             if (scattered) continue;
 
             //            beta *= T_maj / AverageRGB(T_maj);

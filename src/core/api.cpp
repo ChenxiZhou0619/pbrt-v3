@@ -744,8 +744,14 @@ std::shared_ptr<Medium> MakeMedium(const std::string &name,
         Spectrum sigma_s = paramSet.FindOneSpectrum("sigma_s", Spectrum(1.f));
         Float g = paramSet.FindOneFloat("g", .0f);
 
+        Float le_scale = paramSet.FindOneFloat("Lescale", 1.f);
+        Float temp_offset = paramSet.FindOneFloat("temperaturecutoff", .0f);
+        Float temperature_scale =
+            paramSet.FindOneFloat("temperaturescale", 1.f);
+
         m = new NanovdbMedium(vdbfilename, density_scale, sigma_a, sigma_s, g,
-                              medium2world);
+                              medium2world, le_scale, temp_offset,
+                              temperature_scale);
 
     }
 

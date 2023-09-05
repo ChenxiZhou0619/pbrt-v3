@@ -148,13 +148,17 @@ class NanovdbMedium : public Medium {
   public:
     NanovdbMedium(const std::string &vdbfilename, Float density_scale,
                   Spectrum sigma_a, Spectrum sigma_s, Float g,
-                  const Transform &medium_transform)
+                  const Transform &medium_transform, Float LeScale,
+                  Float temperatureOffset, Float temperatureScale)
         : g(g),
           density_scale(density_scale),
           sigma_a(sigma_a),
           sigma_s(sigma_s),
           sigma_t(sigma_a + sigma_s),
-          medium_transform(medium_transform) {
+          medium_transform(medium_transform),
+          Le_scale(LeScale),
+          temperature_offset(temperatureOffset),
+          temperature_scale(temperatureScale) {
         // Read the nanovdb file
 
         densityGrid = nanovdb::io::readGrid(vdbfilename, "density", 0);
