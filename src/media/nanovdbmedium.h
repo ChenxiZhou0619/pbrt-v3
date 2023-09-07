@@ -9,6 +9,7 @@
 
 #include "medium.h"
 #include "parallel.h"
+#include "sampling.h"
 #include "transform.h"
 
 //* GridDensityMedium based on nanovdb
@@ -142,6 +143,32 @@ class RegularTracker {
         cur_index[3];    // the index of current voxel
 };
 
+class EmissionGrid {
+  public:
+    EmissionGrid(){};
+
+    void emplace_back(Vector3i index, Float weight) {
+        voxels.emplace_back(index);
+        weights.emplace_back(weight);
+    }
+
+    void build() {
+        if (!voxels.empty()) {
+            size = voxels.size();
+            voxel_distrib =
+                std::make_unique<Distribution1D>(weights.data(), size);
+        }
+    }
+
+    Point3f sampleVoxel(Float u, Float *pdf = nullptr) const;
+
+  private:
+    int size;
+    std::vector<Vector3i> voxels;
+    std::vector<Float> weights;
+    std::unique_ptr<Distribution1D> voxel_distrib;
+};
+
 using BufferT = nanovdb::HostBuffer;
 
 class NanovdbMedium : public Medium {
@@ -149,7 +176,8 @@ class NanovdbMedium : public Medium {
     NanovdbMedium(const std::string &vdbfilename, Float density_scale,
                   Spectrum sigma_a, Spectrum sigma_s, Float g,
                   const Transform &medium_transform, Float LeScale,
-                  Float temperatureOffset, Float temperatureScale)
+                  Float temperatureOffset, Float temperatureScale,
+                  bool sampleLe)
         : g(g),
           density_scale(density_scale),
           sigma_a(sigma_a),
@@ -230,6 +258,46 @@ class NanovdbMedium : public Medium {
                 },
                 maj_grid->size());
         }
+
+        sample_volumetric_emission = sampleLe;
+
+        if (sample_volumetric_emission && !temperatureGrid) {
+            std::cerr
+                << "Nanovdbmedium without temperatureGrid cann't sample Le\n";
+            sample_volumetric_emission = false;
+        }
+
+        if (sample_volumetric_emission) {
+            // TODO Construct the emission grid
+
+            emission_grid = std::make_unique<EmissionGrid>();
+
+            // traverse the density grid
+            auto density_accessor = densityFloatGrid->getAccessor();
+
+            for (int i = minIndex[0]; i < maxIndex[0]; ++i)
+                for (int j = minIndex[1]; j < maxIndex[1]; ++j)
+                    for (int k = minIndex[2]; k < maxIndex[2]; ++k) {
+                        Float d = density_accessor.getValue({i, j, k});
+                        Point3f p_world = indexToWorld(Point3f(i, j, k));
+                        Spectrum le = Le(p_world);
+
+                        if (!le.IsBlack()) {
+                            Float weight = AverageRGB(le) * d;
+                            emission_grid->emplace_back(Vector3i(i, j, k),
+                                                        weight);
+                        }
+                    }
+
+            emission_grid->build();
+        }
+
+        {
+            // Compute voxel size
+            Vector3f unit_v(1.0, .0, .0);
+            Vector3f index_v = worldToIndex(unit_v);
+            voxel_size = 1.0 / index_v.Length();
+        }
     }
 
     Spectrum Tr(const Ray &ray, Sampler &sampler) const;
@@ -240,6 +308,26 @@ class NanovdbMedium : public Medium {
     bool SampleT_maj(const RayDifferential &ray, Float u_t, Float u_channel,
                      MemoryArena &arena,
                      MajorantSampleRecord *maj_record) const;
+
+    virtual bool SampleEmissionPoint(Float u, Vector3f u3,
+                                     VolumetricEmissionPoint *res,
+                                     Float *pdf = nullptr) const {
+        if (!sample_volumetric_emission) return false;
+
+        // Sample a point in the emission volume
+        Float p_voxel;
+        Point3f p_index = emission_grid->sampleVoxel(u, &p_voxel) + u3;
+
+        Point3f p_world = indexToWorld(p_index);
+
+        res->p = p_world;
+        res->sigma_a = sampleDensity(p_world) * sigma_a;
+        res->Le = Le(p_world);
+        res->pdf = p_voxel / (voxel_size * voxel_size * voxel_size);
+
+        if (pdf) *pdf = res->pdf;
+        return true;
+    }
 
   protected:
     Float sampleDensity(Point3f p_world) const;
@@ -277,6 +365,9 @@ class NanovdbMedium : public Medium {
     int minIndex[3], maxIndex[3];
 
     std::unique_ptr<MajorantGrid> maj_grid;
+    std::unique_ptr<EmissionGrid> emission_grid;
+
+    Float voxel_size;
 };
 
 }  // namespace pbrt

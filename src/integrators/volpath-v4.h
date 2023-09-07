@@ -9,12 +9,14 @@ class VolPathIntegratorV4 : public SamplerIntegrator {
   public:
     VolPathIntegratorV4(int maxDepth, std::shared_ptr<const Camera> camera,
                         std::shared_ptr<Sampler> sampler,
+                        std::vector<std::shared_ptr<Medium>> emissionMediums,
                         const Bounds2i &pixelBounds, Float rrThreshold = 1,
                         const std::string &lightSampleStrategy = "spatial")
         : SamplerIntegrator(camera, sampler, pixelBounds),
           maxDepth(maxDepth),
           rrThreshold(rrThreshold),
-          lightSampleStrategy(lightSampleStrategy) {}
+          lightSampleStrategy(lightSampleStrategy),
+          emissionMediums(emissionMediums) {}
 
     void Preprocess(const Scene &scene, Sampler &sampler);
 
@@ -26,9 +28,11 @@ class VolPathIntegratorV4 : public SamplerIntegrator {
     const Float rrThreshold;
     const std::string lightSampleStrategy;
     std::unique_ptr<LightDistribution> lightDistribution;
+    std::vector<std::shared_ptr<Medium>> emissionMediums;
 };
 
 VolPathIntegratorV4 *CreateVolPathIntegratorV4(
     const ParamSet &params, std::shared_ptr<Sampler> sampler,
-    std::shared_ptr<const Camera> camera);
+    std::shared_ptr<const Camera> camera,
+    std::vector<std::shared_ptr<Medium>> emissionMediums);
 };  // namespace pbrt

@@ -58,9 +58,13 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                         Spectrum betap = beta * T_maj / pdf,
                                  r_e = sigma_maj * T_maj / pdf;
 
-                        if (!betap.IsBlack()) {
-                            L += betap * sigma_a * Le;  // / AverageRGB(r_e);
+                        if (!betap.IsBlack() &&
+                            (bounces == 0 || specular_bounce)) {
+                            L += betap * sigma_a * Le;  //
                         }
+                        // if (!betap.IsBlack()) {
+                        //     L += betap * sigma_a * Le;  // / AverageRGB(r_e);
+                        // }
                     }
 
                     Float p_absorb = sigma_a[channel] / sigma_maj[channel];
@@ -149,6 +153,40 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
         L += beta * UniformSampleOneLight(isect, scene, arena, sampler, true,
                                           lightDistrib);
 
+        if (!emissionMediums.empty()) {
+            // Sample volumetric emission
+            VolumetricEmissionPoint vep;
+            Float u = sampler.Get1D();
+            Vector3f u3 = {sampler.Get1D(), sampler.Get1D(), sampler.Get1D()};
+
+            bool sampled = emissionMediums[0]->SampleEmissionPoint(
+                sampler.Get1D(), u3, &vep);
+
+            if (sampled) {
+                MediumInteraction mi;
+                mi.p = vep.p;
+
+                VisibilityTester vt(isect, mi);
+                Float r_sqr = (vep.p - isect.p).LengthSquared();
+
+                Vector3f wo = -ray.d, wi = Normalize(vep.p - isect.p);
+                Spectrum f = isect.bsdf->f(wo, wi) *
+                             AbsDot(wi, isect.shading.n),
+                         tr = vt.Tr(scene, sampler);
+
+                Spectrum ld =
+                    beta * f * tr * vep.sigma_a * vep.Le / (r_sqr * vep.pdf);
+
+                // if (!tr.IsBlack()) {
+                //     std::cout << "Stop!\n";
+                //     Spectrum new_tr = vt.Tr(scene, sampler);
+                //     std::cout << "  \n";
+                // }
+
+                L += ld;
+            }
+        }
+
         Vector3f wo = -ray.d, wi;
         Float pdf;
         BxDFType flags;
@@ -185,7 +223,8 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
 
 VolPathIntegratorV4 *CreateVolPathIntegratorV4(
     const ParamSet &params, std::shared_ptr<Sampler> sampler,
-    std::shared_ptr<const Camera> camera) {
+    std::shared_ptr<const Camera> camera,
+    std::vector<std::shared_ptr<Medium>> emissionMediums) {
     int maxDepth = params.FindOneInt("maxdepth", 5);
     int np;
     const int *pb = params.FindInt("pixelbounds", &np);
@@ -204,7 +243,7 @@ VolPathIntegratorV4 *CreateVolPathIntegratorV4(
     Float rrThreshold = params.FindOneFloat("rrthreshold", 1.);
     std::string lightStrategy =
         params.FindOneString("lightsamplestrategy", "spatial");
-    return new VolPathIntegratorV4(maxDepth, camera, sampler, pixelBounds,
-                                   rrThreshold, lightStrategy);
+    return new VolPathIntegratorV4(maxDepth, camera, sampler, emissionMediums,
+                                   pixelBounds, rrThreshold, lightStrategy);
 }
 }  // namespace pbrt

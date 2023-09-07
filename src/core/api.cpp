@@ -748,15 +748,17 @@ std::shared_ptr<Medium> MakeMedium(const std::string &name,
         Float temp_offset = paramSet.FindOneFloat("temperaturecutoff", .0f);
         Float temperature_scale =
             paramSet.FindOneFloat("temperaturescale", 1.f);
+        bool sampleLe = paramSet.FindOneBool("sampleLe", false);
 
         m = new NanovdbMedium(vdbfilename, density_scale, sigma_a, sigma_s, g,
                               medium2world, le_scale, temp_offset,
-                              temperature_scale);
+                              temperature_scale, sampleLe);
 
     }
 
     else
         Warning("Medium \"%s\" unknown.", name.c_str());
+
     paramSet.ReportUnused();
     return std::shared_ptr<Medium>(m);
 }
@@ -1713,8 +1715,15 @@ Integrator *RenderOptions::MakeIntegrator() const {
         integrator = CreateSPPMIntegrator(IntegratorParams, camera);
 
     } else if (IntegratorName == "volpath-v4") {
-        integrator =
-            CreateVolPathIntegratorV4(IntegratorParams, sampler, camera);
+        // TODO Add volumetric Le sampling structure
+        std::vector<std::shared_ptr<Medium>> emissionMediums;
+
+        for (auto medium : namedMedia) {
+            if (medium.second->SampleVolumetricEmission())
+                emissionMediums.emplace_back(medium.second);
+        }
+        integrator = CreateVolPathIntegratorV4(IntegratorParams, sampler,
+                                               camera, emissionMediums);
     } else {
         Error("Integrator \"%s\" unknown.", IntegratorName.c_str());
         return nullptr;

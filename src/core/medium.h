@@ -82,6 +82,13 @@ struct MajorantSampleRecord {
     int channel;
 };
 
+struct VolumetricEmissionPoint {
+    Point3f p;
+    Float pdf;
+    Spectrum sigma_a;
+    Spectrum Le;
+};
+
 // Medium Declarations
 class Medium {
   public:
@@ -95,6 +102,21 @@ class Medium {
     virtual bool SampleT_maj(const RayDifferential &ray, Float u_t,
                              Float u_channel, MemoryArena &arena,
                              MajorantSampleRecord *maj_record) const = 0;
+
+    // Default no sample
+    virtual bool SampleVolumetricEmission() const {
+        return sample_volumetric_emission;
+    }
+
+    // Return true if sampled
+    virtual bool SampleEmissionPoint(Float u, Vector3f u3,
+                                     VolumetricEmissionPoint *res,
+                                     Float *pdf = nullptr) const {
+        return false;
+    }
+
+  protected:
+    bool sample_volumetric_emission = false;
 };
 
 // HenyeyGreenstein Declarations

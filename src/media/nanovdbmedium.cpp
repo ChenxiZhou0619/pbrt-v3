@@ -41,7 +41,7 @@ bool DDATracker::track(MajorantSeg *seg) {
     Float dt_w;
     if (next_crossingT_w[step_axis] > t_max_w) {
         /* Terminate in current voxel */
-        terminate = true;
+        //        terminate = true;
         dt_w = t_max_w - cur_t_w;
 
     } else {
@@ -401,6 +401,11 @@ Spectrum NanovdbMedium::Le(Point3f p_world) const {
     auto rgb = blackbody_emission_spectrum.ToRGBSpectrum();
     for (int i = 0; i < 3; ++i) rgb[i] = std::max(.0f, rgb[i]);
     return rgb * Le_scale;
+}
+
+Point3f EmissionGrid::sampleVoxel(Float u, Float *pdf) const {
+    int idx = voxel_distrib->SampleDiscrete(u, pdf);
+    return Point3f(voxels[idx][0], voxels[idx][1], voxels[idx][2]);
 }
 
 }  // namespace pbrt
