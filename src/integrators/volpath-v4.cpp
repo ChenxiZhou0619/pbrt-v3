@@ -58,13 +58,17 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                         Spectrum betap = beta * T_maj / pdf,
                                  r_e = sigma_maj * T_maj / pdf;
 
-                        if (!betap.IsBlack() &&
-                            (bounces == 0 || specular_bounce)) {
-                            L += betap * sigma_a * Le;  //
+                        Float misw;
+
+                        if (bounces == 0 || specular_bounce || !sampleLe)
+                            misw = 1.0;
+                        else {
+                            // Compute misw
                         }
-                        // if (!betap.IsBlack()) {
-                        //     L += betap * sigma_a * Le;  // / AverageRGB(r_e);
-                        // }
+
+                        if (!betap.IsBlack()) {
+                            L += betap * sigma_a * Le * misw;
+                        }
                     }
 
                     Float p_absorb = sigma_a[channel] / sigma_maj[channel];
@@ -153,7 +157,7 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
         L += beta * UniformSampleOneLight(isect, scene, arena, sampler, true,
                                           lightDistrib);
 
-        if (!emissionMediums.empty()) {
+        if (sampleLe && !emissionMediums.empty()) {
             // Sample volumetric emission
             VolumetricEmissionPoint vep;
             Float u = sampler.Get1D();
@@ -177,12 +181,7 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                 Spectrum ld =
                     beta * f * tr * vep.sigma_a * vep.Le / (r_sqr * vep.pdf);
 
-                // if (!tr.IsBlack()) {
-                //     std::cout << "Stop!\n";
-                //     Spectrum new_tr = vt.Tr(scene, sampler);
-                //     std::cout << "  \n";
-                // }
-
+                // TODO misw
                 L += ld;
             }
         }
@@ -243,7 +242,10 @@ VolPathIntegratorV4 *CreateVolPathIntegratorV4(
     Float rrThreshold = params.FindOneFloat("rrthreshold", 1.);
     std::string lightStrategy =
         params.FindOneString("lightsamplestrategy", "spatial");
+    bool sampleLe = params.FindOneBool("sampleLe", false);
+
     return new VolPathIntegratorV4(maxDepth, camera, sampler, emissionMediums,
-                                   pixelBounds, rrThreshold, lightStrategy);
+                                   pixelBounds, sampleLe, rrThreshold,
+                                   lightStrategy);
 }
 }  // namespace pbrt

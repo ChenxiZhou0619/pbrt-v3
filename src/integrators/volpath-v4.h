@@ -10,13 +10,15 @@ class VolPathIntegratorV4 : public SamplerIntegrator {
     VolPathIntegratorV4(int maxDepth, std::shared_ptr<const Camera> camera,
                         std::shared_ptr<Sampler> sampler,
                         std::vector<std::shared_ptr<Medium>> emissionMediums,
-                        const Bounds2i &pixelBounds, Float rrThreshold = 1,
+                        const Bounds2i &pixelBounds, bool sampleLe,
+                        Float rrThreshold = 1,
                         const std::string &lightSampleStrategy = "spatial")
         : SamplerIntegrator(camera, sampler, pixelBounds),
           maxDepth(maxDepth),
           rrThreshold(rrThreshold),
           lightSampleStrategy(lightSampleStrategy),
-          emissionMediums(emissionMediums) {}
+          emissionMediums(emissionMediums),
+          sampleLe(sampleLe) {}
 
     void Preprocess(const Scene &scene, Sampler &sampler);
 
@@ -29,6 +31,8 @@ class VolPathIntegratorV4 : public SamplerIntegrator {
     const std::string lightSampleStrategy;
     std::unique_ptr<LightDistribution> lightDistribution;
     std::vector<std::shared_ptr<Medium>> emissionMediums;
+
+    bool sampleLe = false;
 };
 
 VolPathIntegratorV4 *CreateVolPathIntegratorV4(

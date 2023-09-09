@@ -222,7 +222,7 @@ class NanovdbMedium : public Medium {
                     maxIndex[0] + 1.0, maxIndex[1] + 1.0, maxIndex[2] + 1.0));
         Bounds3f medium_worldbound{bound_min, bound_max};
         maj_grid = std::make_unique<MajorantGrid>(medium_worldbound,
-                                                  Vector3i{16, 16, 16});
+                                                  Vector3i{64, 64, 64});
 
         {
             int X = maj_grid->resolution.x, Y = maj_grid->resolution.y,
@@ -328,6 +328,8 @@ class NanovdbMedium : public Medium {
         if (pdf) *pdf = res->pdf;
         return true;
     }
+
+    virtual Float pdf_emissionP(Point3f p_world) const;
 
   protected:
     Float sampleDensity(Point3f p_world) const;

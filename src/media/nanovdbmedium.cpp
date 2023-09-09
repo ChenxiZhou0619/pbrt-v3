@@ -408,4 +408,8 @@ Point3f EmissionGrid::sampleVoxel(Float u, Float *pdf) const {
     return Point3f(voxels[idx][0], voxels[idx][1], voxels[idx][2]);
 }
 
+Float NanovdbMedium::pdf_emissionP(Point3f p_world) const {
+    //
+}
+
 }  // namespace pbrt

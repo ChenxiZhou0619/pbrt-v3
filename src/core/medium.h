@@ -115,6 +115,8 @@ class Medium {
         return false;
     }
 
+    virtual Float pdf_emissionP(Point3f p_world) const { return 0; }
+
   protected:
     bool sample_volumetric_emission = false;
 };
