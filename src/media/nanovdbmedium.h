@@ -5,7 +5,7 @@
 #include <util/IO.h>
 #include <util/SampleFromVoxels.h>
 
-#include <optional>
+#include <unordered_map>
 
 #include "medium.h"
 #include "parallel.h"
@@ -145,9 +145,10 @@ class RegularTracker {
 
 class EmissionGrid {
   public:
-    EmissionGrid(){};
+    EmissionGrid() = default;
 
     void emplace_back(Vector3i index, Float weight) {
+        voxelIndexMap[index] = voxels.size();
         voxels.emplace_back(index);
         weights.emplace_back(weight);
     }
@@ -162,11 +163,14 @@ class EmissionGrid {
 
     Point3f sampleVoxel(Float u, Float *pdf = nullptr) const;
 
+    Float P_voxel(Vector3i voxel_idx) const;
+
   private:
     int size;
     std::vector<Vector3i> voxels;
     std::vector<Float> weights;
     std::unique_ptr<Distribution1D> voxel_distrib;
+    std::unordered_map<Vector3i, int> voxelIndexMap;
 };
 
 using BufferT = nanovdb::HostBuffer;
@@ -175,7 +179,8 @@ class NanovdbMedium : public Medium {
   public:
     NanovdbMedium(const std::string &vdbfilename, Float density_scale,
                   Spectrum sigma_a, Spectrum sigma_s, Float g,
-                  const Transform &medium_transform, Float LeScale,
+                  const Transform &medium_transform, std::string density_name,
+                  std::string temperature_name, Float LeScale,
                   Float temperatureOffset, Float temperatureScale,
                   bool sampleLe)
         : g(g),
@@ -189,7 +194,7 @@ class NanovdbMedium : public Medium {
           temperature_scale(temperatureScale) {
         // Read the nanovdb file
 
-        densityGrid = nanovdb::io::readGrid(vdbfilename, "density", 0);
+        densityGrid = nanovdb::io::readGrid(vdbfilename, density_name, 1);
         densityFloatGrid = densityGrid.grid<Float>();
 
         if (!densityGrid) {
@@ -197,7 +202,8 @@ class NanovdbMedium : public Medium {
             exit(1);
         }
 
-        temperatureGrid = nanovdb::io::readGrid(vdbfilename, "temperature", 0);
+        temperatureGrid =
+            nanovdb::io::readGrid(vdbfilename, temperature_name, 1);
         temperatureFloatGrid = temperatureGrid.grid<Float>();
 
         minIndex[0] = densityFloatGrid->indexBBox().min().x();
@@ -221,6 +227,13 @@ class NanovdbMedium : public Medium {
                 bound_max = indexToWorld(Point3f(
                     maxIndex[0] + 1.0, maxIndex[1] + 1.0, maxIndex[2] + 1.0));
         Bounds3f medium_worldbound{bound_min, bound_max};
+
+        printf(
+            "The bounding of medium "
+            "\nmin:%.2f,%.2f,%.2f\nmax:%.2f,%.2f,%.2f\n",
+            bound_min.x, bound_min.y, bound_min.z, bound_max.x, bound_max.y,
+            bound_max.z);
+
         maj_grid = std::make_unique<MajorantGrid>(medium_worldbound,
                                                   Vector3i{64, 64, 64});
 
@@ -248,15 +261,60 @@ class NanovdbMedium : public Medium {
                         nz1 = std::min((int)i_max[2] + 1, maxIndex[2]);
 
                     Float max_density = .0;
+
                     auto accessor = densityFloatGrid->getAccessor();
                     for (int i = nx0; i <= nx1; ++i)
                         for (int j = ny0; j <= ny1; ++j)
-                            for (int k = nz0; k <= nz1; ++k)
-                                max_density = std::max(
-                                    max_density, accessor.getValue({i, j, k}));
+                            for (int k = nz0; k <= nz1; ++k) {
+                                Float density = accessor.getValue({i, j, k});
+                                max_density = std::max(max_density, density);
+                            }
+
                     maj_grid->at(x, y, z) = max_density * density_scale;
                 },
                 maj_grid->size());
+        }
+
+        coarse_grid = std::make_unique<MajorantGrid>(medium_worldbound,
+                                                     Vector3i{16, 16, 16});
+        {
+            int X = coarse_grid->resolution.x, Y = coarse_grid->resolution.y,
+                Z = coarse_grid->resolution.z;
+
+            ParallelFor(
+                [&](int index) {
+                    int z = index % Z, y = (index / Z) % Y, x = index / (Z * Y);
+
+                    Bounds3f wb(medium_worldbound.Lerp(Point3f(
+                                    (float)x / X, (float)y / Y, (float)z / Z)),
+                                medium_worldbound.Lerp(Point3f(
+                                    (float)(x + 1) / X, (float)(y + 1) / Y,
+                                    (float)(z + 1) / Z)));
+
+                    auto i_min = worldToIndex(wb.pMin);
+                    auto i_max = worldToIndex(wb.pMax);
+
+                    int nx0 = std::max((int)i_min[0] - 1, minIndex[0]),
+                        nx1 = std::min((int)i_max[0] + 1, maxIndex[0]),
+                        ny0 = std::max((int)i_min[1] - 1, minIndex[1]),
+                        ny1 = std::min((int)i_max[1] + 1, maxIndex[1]),
+                        nz0 = std::max((int)i_min[2] - 1, minIndex[2]),
+                        nz1 = std::min((int)i_max[2] + 1, maxIndex[2]);
+
+                    Float density_sum = .0;
+                    Float weight = .0;
+                    auto accessor = densityFloatGrid->getAccessor();
+                    for (int i = nx0; i <= nx1; ++i)
+                        for (int j = ny0; j <= ny1; ++j)
+                            for (int k = nz0; k <= nz1; ++k) {
+                                Float density = accessor.getValue({i, j, k});
+                                density_sum += density;
+                                weight += 1;
+                            }
+                    coarse_grid->at(x, y, z) =
+                        density_sum / weight * density_scale;
+                },
+                coarse_grid->size());
         }
 
         sample_volumetric_emission = sampleLe;
@@ -268,8 +326,6 @@ class NanovdbMedium : public Medium {
         }
 
         if (sample_volumetric_emission) {
-            // TODO Construct the emission grid
-
             emission_grid = std::make_unique<EmissionGrid>();
 
             // traverse the density grid
@@ -302,6 +358,8 @@ class NanovdbMedium : public Medium {
 
     Spectrum Tr(const Ray &ray, Sampler &sampler) const;
 
+    virtual Spectrum Tr_coarse(const Ray &ray, Sampler &sampler) const;
+
     Spectrum Sample(const Ray &ray, Sampler &sampler, MemoryArena &arena,
                     MediumInteraction *mi) const;
 
@@ -311,23 +369,7 @@ class NanovdbMedium : public Medium {
 
     virtual bool SampleEmissionPoint(Float u, Vector3f u3,
                                      VolumetricEmissionPoint *res,
-                                     Float *pdf = nullptr) const {
-        if (!sample_volumetric_emission) return false;
-
-        // Sample a point in the emission volume
-        Float p_voxel;
-        Point3f p_index = emission_grid->sampleVoxel(u, &p_voxel) + u3;
-
-        Point3f p_world = indexToWorld(p_index);
-
-        res->p = p_world;
-        res->sigma_a = sampleDensity(p_world) * sigma_a;
-        res->Le = Le(p_world);
-        res->pdf = p_voxel / (voxel_size * voxel_size * voxel_size);
-
-        if (pdf) *pdf = res->pdf;
-        return true;
-    }
+                                     Float *pdf = nullptr) const;
 
     virtual Float pdf_emissionP(Point3f p_world) const;
 
@@ -368,6 +410,8 @@ class NanovdbMedium : public Medium {
 
     std::unique_ptr<MajorantGrid> maj_grid;
     std::unique_ptr<EmissionGrid> emission_grid;
+
+    std::unique_ptr<MajorantGrid> coarse_grid;
 
     Float voxel_size;
 };

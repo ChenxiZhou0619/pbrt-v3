@@ -2,7 +2,7 @@
 src/build
 src/bin
 src/objs
-src/ext
+#src/ext
 .sconsign.dblite
 /build
 /build-Debug

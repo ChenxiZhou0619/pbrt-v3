@@ -750,9 +750,15 @@ std::shared_ptr<Medium> MakeMedium(const std::string &name,
             paramSet.FindOneFloat("temperaturescale", 1.f);
         bool sampleLe = paramSet.FindOneBool("sampleLe", false);
 
+        std::string density_name =
+                        paramSet.FindOneString("density_name", "density"),
+                    temperature_name = paramSet.FindOneString(
+                        "temperature_name", "temperature");
+
         m = new NanovdbMedium(vdbfilename, density_scale, sigma_a, sigma_s, g,
-                              medium2world, le_scale, temp_offset,
-                              temperature_scale, sampleLe);
+                              medium2world, density_name, temperature_name,
+                              le_scale, temp_offset, temperature_scale,
+                              sampleLe);
 
     }
 

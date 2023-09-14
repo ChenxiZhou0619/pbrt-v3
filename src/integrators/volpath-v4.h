@@ -10,7 +10,7 @@ class VolPathIntegratorV4 : public SamplerIntegrator {
     VolPathIntegratorV4(int maxDepth, std::shared_ptr<const Camera> camera,
                         std::shared_ptr<Sampler> sampler,
                         std::vector<std::shared_ptr<Medium>> emissionMediums,
-                        const Bounds2i &pixelBounds, bool sampleLe,
+                        const Bounds2i &pixelBounds, bool sampleLe, int M,
                         Float rrThreshold = 1,
                         const std::string &lightSampleStrategy = "spatial")
         : SamplerIntegrator(camera, sampler, pixelBounds),
@@ -18,12 +18,23 @@ class VolPathIntegratorV4 : public SamplerIntegrator {
           rrThreshold(rrThreshold),
           lightSampleStrategy(lightSampleStrategy),
           emissionMediums(emissionMediums),
-          sampleLe(sampleLe) {}
+          sampleLe(sampleLe),
+          M(M) {}
 
     void Preprocess(const Scene &scene, Sampler &sampler);
 
     Spectrum Li(const RayDifferential &ray, const Scene &scene,
                 Sampler &sampler, MemoryArena &arena, int depth) const;
+
+    Spectrum SampleEmissionVolume(
+        const Interaction &isect, const Scene &scene, MemoryArena &arena,
+        Sampler &sampler, std::shared_ptr<Medium> emission_medium) const;
+
+    Spectrum SampleEmissionVolumeRIS(const Interaction &isect,
+                                     const Scene &scene, MemoryArena &arena,
+                                     Sampler &sampler,
+                                     std::shared_ptr<Medium> emission_medium,
+                                     int M) const;
 
   private:
     const int maxDepth;
@@ -33,6 +44,9 @@ class VolPathIntegratorV4 : public SamplerIntegrator {
     std::vector<std::shared_ptr<Medium>> emissionMediums;
 
     bool sampleLe = false;
+    int M;
+
+    std::shared_ptr<Medium> SelectEmissionVolume(Float u, Float *pdf) const;
 };
 
 VolPathIntegratorV4 *CreateVolPathIntegratorV4(

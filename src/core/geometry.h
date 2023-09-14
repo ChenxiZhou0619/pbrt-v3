@@ -39,9 +39,11 @@
 #define PBRT_CORE_GEOMETRY_H
 
 // core/geometry.h*
+#include <functional>
+#include <iterator>
+
 #include "pbrt.h"
 #include "stringprint.h"
-#include <iterator>
 
 namespace pbrt {
 
@@ -423,8 +425,7 @@ class Point3 {
     Point3() { x = y = z = 0; }
     Point3(T x, T y, T z) : x(x), y(y), z(z) { DCHECK(!HasNaNs()); }
     template <typename U>
-    explicit Point3(const Point3<U> &p)
-        : x((T)p.x), y((T)p.y), z((T)p.z) {
+    explicit Point3(const Point3<U> &p) : x((T)p.x), y((T)p.y), z((T)p.z) {
         DCHECK(!HasNaNs());
     }
     template <typename U>
@@ -911,11 +912,12 @@ class RayDifferential : public Ray {
         rxDirection = d + (rxDirection - d) * s;
         ryDirection = d + (ryDirection - d) * s;
     }
-    friend std::ostream &operator<<(std::ostream &os, const RayDifferential &r) {
-        os << "[ " << (Ray &)r << " has differentials: " <<
-            (r.hasDifferentials ? "true" : "false") << ", xo = " << r.rxOrigin <<
-            ", xd = " << r.rxDirection << ", yo = " << r.ryOrigin << ", yd = " <<
-            r.ryDirection;
+    friend std::ostream &operator<<(std::ostream &os,
+                                    const RayDifferential &r) {
+        os << "[ " << (Ray &)r
+           << " has differentials: " << (r.hasDifferentials ? "true" : "false")
+           << ", xo = " << r.rxOrigin << ", xd = " << r.rxDirection
+           << ", yo = " << r.ryOrigin << ", yd = " << r.ryDirection;
         return os;
     }
 
@@ -927,8 +929,7 @@ class RayDifferential : public Ray {
 
 // Geometry Inline Functions
 template <typename T>
-inline Vector3<T>::Vector3(const Point3<T> &p)
-    : x(p.x), y(p.y), z(p.z) {
+inline Vector3<T>::Vector3(const Point3<T> &p) : x(p.x), y(p.y), z(p.z) {
     DCHECK(!HasNaNs());
 }
 
@@ -1027,14 +1028,12 @@ inline void CoordinateSystem(const Vector3<T> &v1, Vector3<T> *v2,
 }
 
 template <typename T>
-Vector2<T>::Vector2(const Point2<T> &p)
-    : x(p.x), y(p.y) {
+Vector2<T>::Vector2(const Point2<T> &p) : x(p.x), y(p.y) {
     DCHECK(!HasNaNs());
 }
 
 template <typename T>
-Vector2<T>::Vector2(const Point3<T> &p)
-    : x(p.x), y(p.y) {
+Vector2<T>::Vector2(const Point3<T> &p) : x(p.x), y(p.y) {
     DCHECK(!HasNaNs());
 }
 
@@ -1168,8 +1167,7 @@ inline Normal3<T> Normalize(const Normal3<T> &n) {
 }
 
 template <typename T>
-inline Vector3<T>::Vector3(const Normal3<T> &n)
-    : x(n.x), y(n.y), z(n.z) {
+inline Vector3<T>::Vector3(const Normal3<T> &n) : x(n.x), y(n.y), z(n.z) {
     DCHECK(!n.HasNaNs());
 }
 
@@ -1326,8 +1324,7 @@ inline Bounds2iIterator end(const Bounds2i &b) {
     // However, if the bounds are degenerate, override the end point to
     // equal the start point so that any attempt to iterate over the bounds
     // exits out immediately.
-    if (b.pMin.x >= b.pMax.x || b.pMin.y >= b.pMax.y)
-        pEnd = b.pMin;
+    if (b.pMin.x >= b.pMax.x || b.pMin.y >= b.pMax.y) pEnd = b.pMin;
     return Bounds2iIterator(b, pEnd);
 }
 
@@ -1475,5 +1472,22 @@ inline Float SphericalPhi(const Vector3f &v) {
 }
 
 }  // namespace pbrt
+
+// hash function
+template <>
+struct std::hash<pbrt::Vector3i> {
+    std::size_t operator()(const pbrt::Vector3i &v) const {
+        using std::hash;
+        using std::size_t;
+        using std::string;
+
+        // Compute individual hash values for first,
+        // second and third and combine them using XOR
+        // and bit shifting:
+
+        return ((hash<int>()(v[0]) ^ (hash<int>()(v[1]) << 1)) >> 1) ^
+               (hash<int>()(v[2]) << 1);
+    }
+};
 
 #endif  // PBRT_CORE_GEOMETRY_H

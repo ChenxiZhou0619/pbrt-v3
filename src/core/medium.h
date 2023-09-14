@@ -95,6 +95,11 @@ class Medium {
     // Medium Interface
     virtual ~Medium() {}
     virtual Spectrum Tr(const Ray &ray, Sampler &sampler) const = 0;
+
+    virtual Spectrum Tr_coarse(const Ray &ray, Sampler &sampler) const {
+        return Tr(ray, sampler);
+    }
+
     virtual Spectrum Sample(const Ray &ray, Sampler &sampler,
                             MemoryArena &arena,
                             MediumInteraction *mi) const = 0;

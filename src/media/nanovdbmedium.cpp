@@ -408,8 +408,91 @@ Point3f EmissionGrid::sampleVoxel(Float u, Float *pdf) const {
     return Point3f(voxels[idx][0], voxels[idx][1], voxels[idx][2]);
 }
 
+Float EmissionGrid::P_voxel(Vector3i voxel_idx) const {
+    if (voxelIndexMap.count(voxel_idx) == 0) return .0;
+    auto voxel_info = voxelIndexMap.find(voxel_idx);
+    return voxel_distrib->DiscretePDF(voxel_info->second);
+}
+
 Float NanovdbMedium::pdf_emissionP(Point3f p_world) const {
-    //
+    Point3f p_index = worldToIndex(p_world);
+
+    Vector3i idx_i(p_index[0], p_index[1], p_index[2]);
+    Float p =
+        emission_grid->P_voxel(idx_i) / (voxel_size * voxel_size * voxel_size);
+    return p;
+}
+
+bool NanovdbMedium::SampleEmissionPoint(Float u, Vector3f u3,
+                                        VolumetricEmissionPoint *res,
+                                        Float *pdf) const {
+    if (!sample_volumetric_emission) return false;
+
+    // Sample a point in the emission volume
+    Float p_voxel;
+    Point3f p_index = emission_grid->sampleVoxel(u, &p_voxel) + u3;
+
+    Point3f p_world = indexToWorld(p_index);
+
+    res->p = p_world;
+    res->sigma_a = sampleDensity(p_world) * sigma_a;
+    res->Le = Le(p_world);
+    res->pdf = p_voxel / (voxel_size * voxel_size * voxel_size);
+
+    if (pdf) *pdf = res->pdf;
+    return true;
+}
+
+Spectrum NanovdbMedium::Tr_coarse(const Ray &_ray, Sampler &sampler) const {
+    auto get_coarse_tracker = [&](Ray ray_world) {
+        // Check if ray_world intersect the coarse_grid
+        Point3f pmin = coarse_grid->world_bound.pMin,
+                pmax = coarse_grid->world_bound.pMax;
+        Float t_min = -Infinity, t_max = Infinity;
+        Point3f origin = ray_world.o;
+        Vector3f direction = ray_world.d;
+
+        //    ray_world.tMax *= ray_world.d.Length();
+        //    Vector3f direction = Normalize(ray_world.d);
+
+        for (int axis = 0; axis < 3; ++axis) {
+            if (direction[axis] == 0) continue;
+
+            Float t_0 = (pmin[axis] - origin[axis]) / direction[axis],
+                  t_1 = (pmax[axis] - origin[axis]) / direction[axis];
+            if (t_0 > t_1) std::swap(t_0, t_1);
+            t_min = std::max(t_min, t_0);
+            t_max = std::min(t_max, t_1);
+
+            if (t_min > t_max || t_max < 0)
+                return DDATracker(true);  // Just terminate
+        }
+
+        Float cur_t_w = t_min > 0 ? t_min : 0;
+        Point3f pIndex = coarse_grid->toIndex(origin + direction * cur_t_w);
+
+        return DDATracker(coarse_grid->resolution, pIndex, direction,
+                          coarse_grid->voxel_size_w, cur_t_w, ray_world.tMax);
+    };
+
+    Ray ray = _ray;
+    ray.tMax *= ray.d.Length();
+    ray.d = Normalize(ray.d);
+
+    DDATracker tracker = get_coarse_tracker(ray);
+
+    Spectrum sum(.0);
+
+    MajorantSeg seg;
+    while (tracker.track(&seg)) {
+        int ix = seg.index[0], iy = seg.index[1], iz = seg.index[2];
+        Float density = coarse_grid->at(ix, iy, iz);
+
+        sum += density * sigma_t * seg.dt_w;
+        tracker.next();
+    }
+
+    return Exp(-sum);
 }
 
 }  // namespace pbrt

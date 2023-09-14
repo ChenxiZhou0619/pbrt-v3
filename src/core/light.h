@@ -39,9 +39,9 @@
 #define PBRT_CORE_LIGHT_H
 
 // core/light.h*
-#include "pbrt.h"
-#include "memory.h"
 #include "interaction.h"
+#include "memory.h"
+#include "pbrt.h"
 
 namespace pbrt {
 
@@ -98,6 +98,8 @@ class VisibilityTester {
     const Interaction &P1() const { return p1; }
     bool Unoccluded(const Scene &scene) const;
     Spectrum Tr(const Scene &scene, Sampler &sampler) const;
+
+    Spectrum Tr_coarse(const Scene &scene, Sampler &sampler) const;
 
   private:
     Interaction p0, p1;
