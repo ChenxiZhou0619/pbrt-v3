@@ -39,8 +39,8 @@
 #define PBRT_INTEGRATORS_AO_H
 
 // integrators/ao.h*
-#include "pbrt.h"
 #include "integrator.h"
+#include "pbrt.h"
 
 namespace pbrt {
 
@@ -50,11 +50,11 @@ class AOIntegrator : public SamplerIntegrator {
     // AOIntegrator Public Methods
     AOIntegrator(bool cosSample, int nSamples,
                  std::shared_ptr<const Camera> camera,
-                 std::shared_ptr<Sampler> sampler,
-                 const Bounds2i &pixelBounds);
+                 std::shared_ptr<Sampler> sampler, const Bounds2i &pixelBounds);
     Spectrum Li(const RayDifferential &ray, const Scene &scene,
                 Sampler &sampler, MemoryArena &arena, int depth) const;
- private:
+
+  private:
     bool cosSample;
     int nSamples;
 };

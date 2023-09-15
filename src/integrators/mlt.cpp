@@ -30,20 +30,20 @@
 
  */
 
-
 // integrators/mlt.cpp*
 #include "integrators/mlt.h"
-#include "integrators/bdpt.h"
-#include "scene.h"
-#include "film.h"
-#include "sampler.h"
-#include "integrator.h"
+
 #include "camera.h"
-#include "stats.h"
+#include "film.h"
 #include "filters/box.h"
+#include "integrator.h"
+#include "integrators/bdpt.h"
 #include "paramset.h"
-#include "sampling.h"
 #include "progressreporter.h"
+#include "sampler.h"
+#include "sampling.h"
+#include "scene.h"
+#include "stats.h"
 
 namespace pbrt {
 
@@ -123,10 +123,11 @@ void MLTSampler::StartStream(int index) {
 }
 
 // MLT Method Definitions
-Spectrum MLTIntegrator::L(const Scene &scene, MemoryArena &arena,
-                          const std::unique_ptr<Distribution1D> &lightDistr,
-                          const std::unordered_map<const Light *, size_t> &lightToIndex,
-                          MLTSampler &sampler, int depth, Point2f *pRaster) {
+Spectrum MLTIntegrator::L(
+    const Scene &scene, MemoryArena &arena,
+    const std::unique_ptr<Distribution1D> &lightDistr,
+    const std::unordered_map<const Light *, size_t> &lightToIndex,
+    MLTSampler &sampler, int depth, Point2f *pRaster) {
     sampler.StartStream(cameraStreamIndex);
     // Determine the number of available strategies and pick a specific one
     int s, t, nStrategies;
@@ -182,20 +183,24 @@ void MLTIntegrator::Render(const Scene &scene) {
                                   "Generating bootstrap paths");
         std::vector<MemoryArena> bootstrapThreadArenas(MaxThreadIndex());
         int chunkSize = Clamp(nBootstrap / 128, 1, 8192);
-        ParallelFor([&](int i) {
-            // Generate _i_th bootstrap sample
-            MemoryArena &arena = bootstrapThreadArenas[ThreadIndex];
-            for (int depth = 0; depth <= maxDepth; ++depth) {
-                int rngIndex = i * (maxDepth + 1) + depth;
-                MLTSampler sampler(mutationsPerPixel, rngIndex, sigma,
-                                   largeStepProbability, nSampleStreams);
-                Point2f pRaster;
-                bootstrapWeights[rngIndex] =
-                    L(scene, arena, lightDistr, lightToIndex, sampler, depth, &pRaster).y();
-                arena.Reset();
-            }
-            if ((i + 1) % 256 == 0) progress.Update();
-        }, nBootstrap, chunkSize);
+        ParallelFor(
+            [&](int i) {
+                // Generate _i_th bootstrap sample
+                MemoryArena &arena = bootstrapThreadArenas[ThreadIndex];
+                for (int depth = 0; depth <= maxDepth; ++depth) {
+                    int rngIndex = i * (maxDepth + 1) + depth;
+                    MLTSampler sampler(mutationsPerPixel, rngIndex, sigma,
+                                       largeStepProbability, nSampleStreams);
+                    Point2f pRaster;
+                    bootstrapWeights[rngIndex] =
+                        L(scene, arena, lightDistr, lightToIndex, sampler,
+                          depth, &pRaster)
+                            .y();
+                    arena.Reset();
+                }
+                if ((i + 1) % 256 == 0) progress.Update();
+            },
+            nBootstrap, chunkSize);
         progress.Done();
     }
     Distribution1D bootstrap(&bootstrapWeights[0], nBootstrapSamples);
@@ -209,55 +214,63 @@ void MLTIntegrator::Render(const Scene &scene) {
         const int progressFrequency = 32768;
         ProgressReporter progress(nTotalMutations / progressFrequency,
                                   "Rendering");
-        ParallelFor([&](int i) {
-            int64_t nChainMutations =
-                std::min((i + 1) * nTotalMutations / nChains, nTotalMutations) -
-                i * nTotalMutations / nChains;
-            // Follow {i}th Markov chain for _nChainMutations_
-            MemoryArena arena;
+        ParallelFor(
+            [&](int i) {
+                int64_t nChainMutations =
+                    std::min((i + 1) * nTotalMutations / nChains,
+                             nTotalMutations) -
+                    i * nTotalMutations / nChains;
+                // Follow {i}th Markov chain for _nChainMutations_
+                MemoryArena arena;
 
-            // Select initial state from the set of bootstrap samples
-            RNG rng(i);
-            int bootstrapIndex = bootstrap.SampleDiscrete(rng.UniformFloat());
-            int depth = bootstrapIndex % (maxDepth + 1);
+                // Select initial state from the set of bootstrap samples
+                RNG rng(i);
+                int bootstrapIndex =
+                    bootstrap.SampleDiscrete(rng.UniformFloat());
+                int depth = bootstrapIndex % (maxDepth + 1);
 
-            // Initialize local variables for selected state
-            MLTSampler sampler(mutationsPerPixel, bootstrapIndex, sigma,
-                               largeStepProbability, nSampleStreams);
-            Point2f pCurrent;
-            Spectrum LCurrent =
-                L(scene, arena, lightDistr, lightToIndex, sampler, depth, &pCurrent);
+                // Initialize local variables for selected state
+                MLTSampler sampler(mutationsPerPixel, bootstrapIndex, sigma,
+                                   largeStepProbability, nSampleStreams);
+                Point2f pCurrent;
+                Spectrum LCurrent = L(scene, arena, lightDistr, lightToIndex,
+                                      sampler, depth, &pCurrent);
 
-            // Run the Markov chain for _nChainMutations_ steps
-            for (int64_t j = 0; j < nChainMutations; ++j) {
-                sampler.StartIteration();
-                Point2f pProposed;
-                Spectrum LProposed =
-                    L(scene, arena, lightDistr, lightToIndex, sampler, depth, &pProposed);
-                // Compute acceptance probability for proposed sample
-                Float accept = std::min((Float)1, LProposed.y() / LCurrent.y());
+                // Run the Markov chain for _nChainMutations_ steps
+                for (int64_t j = 0; j < nChainMutations; ++j) {
+                    sampler.StartIteration();
+                    Point2f pProposed;
+                    Spectrum LProposed =
+                        L(scene, arena, lightDistr, lightToIndex, sampler,
+                          depth, &pProposed);
+                    // Compute acceptance probability for proposed sample
+                    Float accept =
+                        std::min((Float)1, LProposed.y() / LCurrent.y());
 
-                // Splat both current and proposed samples to _film_
-                if (accept > 0)
-                    film.AddSplat(pProposed,
-                                  LProposed * accept / LProposed.y());
-                film.AddSplat(pCurrent, LCurrent * (1 - accept) / LCurrent.y());
+                    // Splat both current and proposed samples to _film_
+                    if (accept > 0)
+                        film.AddSplat(pProposed,
+                                      LProposed * accept / LProposed.y());
+                    film.AddSplat(pCurrent,
+                                  LCurrent * (1 - accept) / LCurrent.y());
 
-                // Accept or reject the proposal
-                if (rng.UniformFloat() < accept) {
-                    pCurrent = pProposed;
-                    LCurrent = LProposed;
-                    sampler.Accept();
-                    ++acceptedMutations;
-                } else
-                    sampler.Reject();
-                ++totalMutations;
-                if ((i * nTotalMutations / nChains + j) % progressFrequency ==
-                    0)
-                    progress.Update();
-                arena.Reset();
-            }
-        }, nChains);
+                    // Accept or reject the proposal
+                    if (rng.UniformFloat() < accept) {
+                        pCurrent = pProposed;
+                        LCurrent = LProposed;
+                        sampler.Accept();
+                        ++acceptedMutations;
+                    } else
+                        sampler.Reject();
+                    ++totalMutations;
+                    if ((i * nTotalMutations / nChains + j) %
+                            progressFrequency ==
+                        0)
+                        progress.Update();
+                    arena.Reset();
+                }
+            },
+            nChains);
         progress.Done();
     }
 

@@ -50,10 +50,6 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                     Point3f p = maj_rec.p;
                     int channel = maj_rec.channel;
 
-                    //                    L = Spectrum(1.f);
-                    //                    terminated = true;
-                    //                    return false;
-
                     if (beta.IsBlack()) {
                         terminated = true;
                         return false;

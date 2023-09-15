@@ -6,7 +6,13 @@ src/objs
 .sconsign.dblite
 /build
 /build-Debug
+/build-debug
 /scenes
 /cmake
 /references
 .cache
+
+.vscode
+.clangd
+
+todo.md

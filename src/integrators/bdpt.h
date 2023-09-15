@@ -40,6 +40,7 @@
 
 // integrators/bdpt.h*
 #include <unordered_map>
+
 #include "camera.h"
 #include "integrator.h"
 #include "interaction.h"
@@ -50,7 +51,6 @@
 #include "scene.h"
 
 namespace pbrt {
-
 /// Forward declaration (correction term for adjoint BSDF with shading normals)
 extern Float CorrectShadingNormal(const SurfaceInteraction &isect,
                                   const Vector3f &wo, const Vector3f &wi,
@@ -67,6 +67,7 @@ struct EndpointInteraction : Interaction {
     EndpointInteraction(const Interaction &it, const Camera *camera)
         : Interaction(it), camera(camera) {}
     EndpointInteraction(const Camera *camera, const Ray &ray)
+
         : Interaction(ray.o, ray.time, ray.medium), camera(camera) {}
     EndpointInteraction(const Light *light, const Ray &r, const Normal3f &nl)
         : Interaction(r.o, r.time, r.medium), light(light) {
@@ -229,7 +230,7 @@ struct Vertex {
         switch (type) {
         case VertexType::Surface:
             return si.bsdf->f(si.wo, wi) *
-                CorrectShadingNormal(si, si.wo, wi, mode);
+                   CorrectShadingNormal(si, si.wo, wi, mode);
         case VertexType::Medium:
             return mi.phase->p(mi.wo, wi);
         default:
@@ -303,9 +304,9 @@ struct Vertex {
             break;
         }
         s += std::string(" connectible: ") +
-            std::string(IsConnectible() ? "true" : "false");
-        s += StringPrintf("\n  p: [ %f, %f, %f ] ng: [ %f, %f, %f ]", p().x, p().y,
-                          p().z, ng().x, ng().y, ng().z);
+             std::string(IsConnectible() ? "true" : "false");
+        s += StringPrintf("\n  p: [ %f, %f, %f ] ng: [ %f, %f, %f ]", p().x,
+                          p().y, p().z, ng().x, ng().y, ng().z);
         s += StringPrintf("\n  pdfFwd: %f pdfRev: %f beta: ", pdfFwd, pdfRev) +
              beta.ToString();
         switch (type) {
@@ -385,7 +386,8 @@ struct Vertex {
 
             // Compute sampling density for non-infinite light sources
             Float pdfPos, pdfDir;
-            light->Pdf_Le(Ray(p(), w, Infinity, time()), ng(), &pdfPos, &pdfDir);
+            light->Pdf_Le(Ray(p(), w, Infinity, time()), ng(), &pdfPos,
+                          &pdfDir);
             pdf = pdfDir * invDist2;
         }
         if (v.IsOnSurface()) pdf *= AbsDot(v.ng(), w);
@@ -418,7 +420,8 @@ struct Vertex {
             size_t index = lightToDistrIndex.find(light)->second;
             pdfChoice = lightDistr.DiscretePDF(index);
 
-            light->Pdf_Le(Ray(p(), w, Infinity, time()), ng(), &pdfPos, &pdfDir);
+            light->Pdf_Le(Ray(p(), w, Infinity, time()), ng(), &pdfPos,
+                          &pdfDir);
             return pdfPos * pdfChoice;
         }
     }
