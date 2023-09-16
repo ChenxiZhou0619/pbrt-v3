@@ -19,6 +19,32 @@ Vector3f SampleDirectionTowardsEmitter(std::shared_ptr<Medium> emitter,
 -------------------------------------------------------------------
 */
 
+// Weighted-delta tracking volumetric path tracer
+class VolpathIntegrator_WeightedDelta : public SamplerIntegrator {
+  public:
+    VolpathIntegrator_WeightedDelta(
+        int maxDepth, std::shared_ptr<const Camera> camera,
+        std::shared_ptr<Sampler> sampler, const Bounds2i &pixelBounds,
+        Float rrThreshold = 1,
+        const std::string &lightSampleStrategy = "sptial");
+
+    void Preprocess(const Scene &scene, Sampler &sampler);
+
+    virtual Spectrum Li(const RayDifferential &ray, const Scene &scene,
+                        Sampler &sampler, MemoryArena &arena, int depth) const;
+
+  protected:
+  protected:
+    const int maxDepth;
+    const Float rrThreshold;
+    const std::string lightSampleStrategy;
+    std::unique_ptr<LightDistribution> lightDistribution;
+};
+
+VolpathIntegrator_WeightedDelta *CreateVolPathIntegrator_WeightedDelta(
+    const ParamSet &params, std::shared_ptr<Sampler> sampler,
+    std::shared_ptr<const Camera> camera);
+
 // This integrator just trate emission volume as classic emitter
 // However, when computing direct lighting, we gather the volumetric
 // emission along the shadowray (when ratio tracking)

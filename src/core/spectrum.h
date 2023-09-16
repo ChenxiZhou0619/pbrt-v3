@@ -514,6 +514,13 @@ inline Float AverageRGB(Spectrum rgb_spectrum) {
     return (rgb_spectrum[0] + rgb_spectrum[1] + rgb_spectrum[2]) * f;
 }
 
+inline Spectrum Abs(Spectrum rgb_spectrum) {
+    rgb_spectrum[0] = std::abs(rgb_spectrum[0]);
+    rgb_spectrum[1] = std::abs(rgb_spectrum[1]);
+    rgb_spectrum[2] = std::abs(rgb_spectrum[2]);
+    return rgb_spectrum;
+}
+
 }  // namespace pbrt
 
 #endif  // PBRT_CORE_SPECTRUM_H

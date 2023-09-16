@@ -121,6 +121,7 @@
 #include "textures/wrinkled.h"
 
 // New plugins
+#include "integrators/volintegrators.h"
 #include "integrators/volpath-v4.h"
 #include "media/nanovdbmedium.h"
 namespace pbrt {
@@ -754,6 +755,9 @@ std::shared_ptr<Medium> MakeMedium(const std::string &name,
                         paramSet.FindOneString("density_name", "density"),
                     temperature_name = paramSet.FindOneString(
                         "temperature_name", "temperature");
+
+        //        Float majorant_ratio =
+        //        paramSet.FindOneFloat("majorant_ratio", 1.f);
 
         m = new NanovdbMedium(vdbfilename, density_scale, sigma_a, sigma_s, g,
                               medium2world, density_name, temperature_name,
@@ -1730,7 +1734,12 @@ Integrator *RenderOptions::MakeIntegrator() const {
         }
         integrator = CreateVolPathIntegratorV4(IntegratorParams, sampler,
                                                camera, emissionMediums);
-    } else {
+    } else if (IntegratorName == "vol-weighted") {
+        integrator = CreateVolPathIntegrator_WeightedDelta(IntegratorParams,
+                                                           sampler, camera);
+    }
+
+    else {
         Error("Integrator \"%s\" unknown.", IntegratorName.c_str());
         return nullptr;
     }
