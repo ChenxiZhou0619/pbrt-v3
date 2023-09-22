@@ -1,9 +1,9 @@
 #pragma once
 
-#include <NanoVDB.h>
-#include <util/GridHandle.h>
-#include <util/IO.h>
-#include <util/SampleFromVoxels.h>
+#include <nanovdb/NanoVDB.h>
+#include <nanovdb/util/GridHandle.h>
+#include <nanovdb/util/IO.h>
+#include <nanovdb/util/SampleFromVoxels.h>
 
 #include <unordered_map>
 

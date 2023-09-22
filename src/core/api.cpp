@@ -1737,6 +1737,15 @@ Integrator *RenderOptions::MakeIntegrator() const {
     } else if (IntegratorName == "vol-weighted") {
         integrator = CreateVolPathIntegrator_WeightedDelta(IntegratorParams,
                                                            sampler, camera);
+    } else if (IntegratorName == "vol-lineIntegration") {
+        std::vector<std::shared_ptr<Medium>> emissionMediums;
+
+        for (auto medium : namedMedia) {
+            if (medium.second->SampleVolumetricEmission())
+                emissionMediums.emplace_back(medium.second);
+        }
+        integrator = CreateVolPathIntegrator_LineIntegration(
+            IntegratorParams, sampler, camera, emissionMediums);
     }
 
     else {

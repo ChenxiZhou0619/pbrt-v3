@@ -258,8 +258,67 @@ void VolPathIntegrator_LineIntegration::Preprocess(const Scene &scene,
 
 // Do ratio tracking like line integration to gather the le along given ray
 Spectrum VolPathIntegrator_LineIntegration::IntegrateLe(
-    const Scene &scene, const RayDifferential &_ray, Sampler &sampler) const {
-    //
+    const Scene &scene, const RayDifferential &_ray, Sampler &sampler,
+    MemoryArena &arena) const {
+    // TODO Handle chromatic media
+    constexpr int channel = 0;
+    Spectrum Ld(.0f);
+    Spectrum beta(1.f);
+    RayDifferential ray(_ray);
+
+    do {
+        SurfaceInteraction isect;
+        bool found_intersection = scene.Intersect(ray, &isect);
+
+        Float t_max = found_intersection ? ray.tMax : Infinity;
+
+        RNG rng(rand());
+
+        bool termiante = false;
+        if (ray.medium) {
+            SampleT_maj(
+                ray, t_max, rng, arena, [&](MajorantSampleRecord maj_rec) {
+                    Spectrum T_maj = maj_rec.T_maj;
+                    Spectrum sigma_a = maj_rec.sigma_a;
+                    Spectrum sigma_n = maj_rec.sigma_n;
+                    Spectrum sigma_maj = sigma_a + sigma_n + maj_rec.sigma_s;
+                    Spectrum Le = maj_rec.Le;
+
+                    Float pdf = T_maj[channel] * sigma_maj[channel];
+                    beta *= T_maj / pdf;
+
+                    if (!Le.IsBlack()) {
+                        Ld += beta * sigma_a * Le;
+                    }
+
+                    beta *= sigma_n;
+
+                    if (beta.MaxComponentValue() < rrThreshold) {
+                        Float q =
+                            std::max((Float).05, 1 - beta.MaxComponentValue());
+                        if (rng.UniformFloat() < q) {
+                            termiante = true;
+                            return false;
+                        }
+                        beta /= 1 - q;
+                    }
+
+                    return true;
+                });
+        }
+
+        if (!found_intersection || termiante) break;
+
+        isect.ComputeScatteringFunctions(ray, arena, true);
+        if (!isect.bsdf) {
+            ray = isect.SpawnRay(ray.d);
+            continue;
+        }
+        break;
+
+    } while (true);
+
+    return Ld;
 }
 
 Spectrum VolPathIntegrator_LineIntegration::Li(const RayDifferential &_ray,
@@ -267,74 +326,48 @@ Spectrum VolPathIntegrator_LineIntegration::Li(const RayDifferential &_ray,
                                                Sampler &sampler,
                                                MemoryArena &arena,
                                                int depth) const {
+    // TODO Support chromatic media
     constexpr int channel = 0;
 
-    Spectrum L(.0f), beta(1.f);
-    RayDifferential ray(_ray);
+    Spectrum L(.0f);            //* The accumulative radiance on sampled path
+    Spectrum beta(1.f);         //* The weight for current path
+    RayDifferential ray(_ray);  //* The ray to be traced
+    int bounces = 0;  //* How many scatter collisions exist on current path
 
-    int bounces = 0;
+    bool specular_bounce = false;
 
-    // Start tracing the ray
-    while (true) {
-        SurfaceInteraction isect;
-        bool found_intersection = scene.Intersect(ray, &isect);
+    L += beta * IntegrateLe(scene, ray, sampler, arena);
 
-        const Medium *medium = ray.medium;
-        if (medium) {
-            // Tracing the medium
+    return L;
+}
 
-            bool scattered = false, terminated = false;
-            Float t_max = found_intersection ? ray.tMax : Infinity;
-            RNG rng(rand());
-
-            // Cuz all volumetric emission term will be handled in IntegrateLe,
-            // So, just tracing in this function (construct the path)
-            Spectrum T_maj = SampleT_maj(
-                ray, t_max, rng, arena, [&](MajorantSampleRecord maj_rec) {
-                    Spectrum T_maj = maj_rec.T_maj;
-                    Spectrum sigma_a = maj_rec.sigma_a;
-                    Spectrum sigma_n = maj_rec.sigma_n;
-                    Spectrum sigma_s = maj_rec.sigma_s;
-                    Spectrum sigma_maj = sigma_a + sigma_s + sigma_n;
-                    Point3f position = maj_rec.p;
-
-                    if (beta.IsBlack()) {
-                        terminated = true;
-                        return false;  // No needs to continue sampling T_maj
-                    }
-
-                    // TODO no chromatic medium support
-                    Float p_absorb = sigma_a[channel] / sigma_maj[channel];
-                    Float p_scatter = sigma_s[channel] / sigma_maj[channel];
-
-                    int mode = SampleCollisionType(rng.UniformFloat(), p_absorb,
-                                                   p_scatter);
-
-                    switch (mode) {
-                    case 0 /* Absorb, just terminate the tracing*/:
-                        terminated = true;
-                        return false;
-                    case 1 /* Scatter, update the ray and continue the tracing*/:
-                        Float pdf = T_maj[channel] * sigma_s[channel];
-                        beta *= T_maj * sigma_s / pdf;
-
-                        if (++bounces > maxDepth || beta.IsBlack()) {
-                            terminated = true;
-                            return false;
-                        }
-
-                        MediumInteraction mi(position, -ray.d, ray.time, medium,
-                                             maj_rec.phase);
-
-                        // Sample a direction towards emission medium, and
-                        // integrate on it
-                        Float p_emitter;
-                        auto emitter = UniformChooseOneEmissionMedium(
-                            rng.UniformFloat(), emission_mediums, &p_emitter);
-                    }
-                });
+VolPathIntegrator_LineIntegration *CreateVolPathIntegrator_LineIntegration(
+    const ParamSet &params, std::shared_ptr<Sampler> sampler,
+    std::shared_ptr<const Camera> camera,
+    std::vector<std::shared_ptr<Medium>> emission_mediums) {
+    int maxDepth = params.FindOneInt("maxdepth", 5);
+    int np;
+    const int *pb = params.FindInt("pixelbounds", &np);
+    Bounds2i pixelBounds = camera->film->GetSampleBounds();
+    if (pb) {
+        if (np != 4)
+            Error("Expected four values for \"pixelbounds\" parameter. Got %d.",
+                  np);
+        else {
+            pixelBounds = Intersect(pixelBounds,
+                                    Bounds2i{{pb[0], pb[2]}, {pb[1], pb[3]}});
+            if (pixelBounds.Area() == 0)
+                Error("Degenerate \"pixelbounds\" specified.");
         }
     }
+    Float rrThreshold = params.FindOneFloat("rrthreshold", 1.);
+    std::string lightStrategy =
+        params.FindOneString("lightsamplestrategy", "spatial");
+    bool sample_le = params.FindOneBool("sampleLe", false);
+
+    return new VolPathIntegrator_LineIntegration(
+        maxDepth, camera, sampler, emission_mediums, pixelBounds, sample_le,
+        rrThreshold, lightStrategy);
 }
 
 }  // namespace pbrt

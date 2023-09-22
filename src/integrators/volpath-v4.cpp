@@ -55,18 +55,14 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                         return false;
                     }
 
-                    //                    if (bounces <= maxDepth &&
-                    //                    !maj_rec.Le.IsBlack()) {
-                    //                        Float pdf = T_maj[channel] *
-                    //                        sigma_maj[channel]; Spectrum betap
-                    //                        = beta * T_maj / pdf,
-                    //                                 r_e = sigma_maj * T_maj /
-                    //                                 pdf;
-                    //
-                    //                        if (!sampleLe || bounces == 0 ||
-                    //                        specular_bounce)
-                    //                            L += betap * sigma_a * Le;
-                    //                    }
+                    if (bounces <= maxDepth && !maj_rec.Le.IsBlack()) {
+                        Float pdf = T_maj[channel] * sigma_maj[channel];
+                        Spectrum betap = beta * T_maj / pdf,
+                                 r_e = sigma_maj * T_maj / pdf;
+
+                        if (!sampleLe || bounces == 0 || specular_bounce)
+                            L += betap * sigma_a * Le;
+                    }
 
                     Float p_absorb = sigma_a[channel] / sigma_maj[channel];
                     Float p_scatter = sigma_s[channel] / sigma_maj[channel];
@@ -85,29 +81,38 @@ Spectrum VolPathIntegratorV4::Li(const RayDifferential &r, const Scene &scene,
                     int mode = SampleScatterType(um, p_absorb, p_scatter);
 
                     if (mode == 0 /* Absorb */) {
-                        if (bounces <= maxDepth && !maj_rec.Le.IsBlack()) {
-                            Float pdf = T_maj[channel] * sigma_a[channel];
-
-                            pdf_t *= pdf;  //!
-
-                            Spectrum betap = beta * T_maj / pdf,
-                                     r_e = sigma_maj * T_maj / pdf;
-                            Float misw;
-                            if (!sampleLe || bounces == 0 || specular_bounce)
-                                misw = 1.f;
-                            else {
-                                // compute misw
-                                // misw = p_u / (p_u +p_l)
-                                Float pdf_u = prev_scatter_pdf * pdf_t;
-                                Float pdf_l =
-                                    ray.medium->pdf_emissionP(maj_rec.p) *
-                                    (maj_rec.p - prev_shading_p)
-                                        .LengthSquared();
-                                misw = pdf_u / (pdf_u + pdf_l);
-                            }
-
-                            L += betap * sigma_a * Le * misw;
-                        }
+                        //                        if (bounces <= maxDepth &&
+                        //                        !maj_rec.Le.IsBlack()) {
+                        //                            Float pdf = T_maj[channel]
+                        //                            * sigma_a[channel];
+                        //
+                        //                            pdf_t *= pdf;  //!
+                        //
+                        //                            Spectrum betap = beta *
+                        //                            T_maj / pdf,
+                        //                                     r_e = sigma_maj *
+                        //                                     T_maj / pdf;
+                        //                            Float misw;
+                        //                            if (!sampleLe || bounces
+                        //                            == 0 || specular_bounce)
+                        //                                misw = 1.f;
+                        //                            else {
+                        //                                // compute misw
+                        //                                // misw = p_u / (p_u
+                        //                                +p_l) Float pdf_u =
+                        //                                prev_scatter_pdf *
+                        //                                pdf_t; Float pdf_l =
+                        //                                    ray.medium->pdf_emissionP(maj_rec.p)
+                        //                                    * (maj_rec.p -
+                        //                                    prev_shading_p)
+                        //                                        .LengthSquared();
+                        //                                misw = pdf_u / (pdf_u
+                        //                                + pdf_l);
+                        //                            }
+                        //
+                        //                            L += betap * sigma_a * Le
+                        //                            * misw;
+                        //                        }
 
                         terminated = true;
                         return false;

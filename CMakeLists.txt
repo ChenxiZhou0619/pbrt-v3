@@ -7,6 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 SET(CMAKE_CXX_STANDARD 14)
 
 
+
 # For sanitizers
 SET (CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 
@@ -369,7 +370,8 @@ INCLUDE_DIRECTORIES ( src/ext/ptex/src/ptex )
 ###########################################################################
 #nanovdb
 
-INCLUDE_DIRECTORIES(src/ext/nanovdb)
+INCLUDE_DIRECTORIES(src/ext)
+INCLUDE_DIRECTORIES(src/ext/openvdb/openvdb)
 
 #nothing else
 
@@ -555,6 +557,14 @@ ADD_SANITIZERS ( obj2pbrt )
 ADD_EXECUTABLE ( cyhair2pbrt src/tools/cyhair2pbrt.cpp )
 ADD_SANITIZERS ( cyhair2pbrt )
 
+
+ADD_SUBDIRECTORY(src/ext)
+
+
+ADD_EXECUTABLE (open2nano src/tools/open2nano.cpp)
+TARGET_LINK_DIRECTORIES(open2nano PUBLIC build/src/ext/openvdb/openvdb/openvdb )
+TARGET_LINK_LIBRARIES(open2nano openvdb z)
+
 # Unit test
 
 FILE ( GLOB PBRT_TEST_SOURCE
@@ -566,6 +576,7 @@ ADD_EXECUTABLE ( pbrt_test ${PBRT_TEST_SOURCE} )
 ADD_SANITIZERS ( pbrt_test )
 TARGET_COMPILE_FEATURES ( pbrt_test PRIVATE ${PBRT_CXX11_FEATURES} )
 TARGET_LINK_LIBRARIES ( pbrt_test ${ALL_PBRT_LIBS} )
+
 
 ADD_TEST ( pbrt_unit_test pbrt_test )
 

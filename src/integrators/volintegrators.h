@@ -60,7 +60,7 @@ class VolPathIntegrator_LineIntegration : public SamplerIntegrator {
     void Preprocess(const Scene &scene, Sampler &sampler);
 
     Spectrum IntegrateLe(const Scene &scene, const RayDifferential &ray,
-                         Sampler &sampler) const;
+                         Sampler &sampler, MemoryArena &arena) const;
 
     Spectrum Li(const RayDifferential &ray, const Scene &scene,
                 Sampler &sampler, MemoryArena &arena, int depth) const;
@@ -74,4 +74,9 @@ class VolPathIntegrator_LineIntegration : public SamplerIntegrator {
     bool sample_le;
     std::vector<std::shared_ptr<Medium>> emission_mediums;
 };
+
+VolPathIntegrator_LineIntegration *CreateVolPathIntegrator_LineIntegration(
+    const ParamSet &params, std::shared_ptr<Sampler> sampler,
+    std::shared_ptr<const Camera> camera,
+    std::vector<std::shared_ptr<Medium>> emission_mediums);
 }  // namespace pbrt
