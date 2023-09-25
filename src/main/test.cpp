@@ -38,6 +38,12 @@ int main()
     std::cout << "Level " << level << "'s sum :" << sum << std::endl;
   }
 
+  for (const auto& vtx : lgh->grids[0]->vertices)
+  {
+    std::cout << "Vertex[0] position is : " << vtx.vertex_position;
+    std::cout << ", illumination center is : " << vtx.illumination_center << std::endl;
+  }
+
   pbrtCleanup();
   return 0;
 }

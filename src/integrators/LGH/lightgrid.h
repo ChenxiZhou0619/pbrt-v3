@@ -9,8 +9,11 @@ class NanovdbMedium;
 struct GridVertex
 {
   Point3f  vertex_position;
-  Point3f  illumination_center;
   Spectrum intensity = Spectrum(.0f);
+
+  Point3f  illumination_center;
+  Vector3f illumination_offset        = Vector3f(.0f, .0f, .0f);
+  Float    illumination_offset_weight = .0f;
 
   std::mutex mtx;
 };

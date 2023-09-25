@@ -119,14 +119,43 @@ std::unique_ptr<LightGridHierarchy> CreateLGH(std::shared_ptr<NanovdbMedium> med
             trilinear_weight *= 1.f - std::abs(cell_index.y - y);
             trilinear_weight *= 1.f - std::abs(cell_index.z - z);
 
-            //* Update the intensity of the vertex
+            //* Update the intensity and illumination_center of the vertex
             vtx.mtx.lock();
-            vtx.intensity += trilinear_weight * sigma_a * Le * voxel_volume;
+            Spectrum weighted_intensity  = trilinear_weight * sigma_a * Le * voxel_volume;
+            Float    weight              = weighted_intensity.y();
+            Vector3f illumination_offset = weight * (voxel_center_world - vtx.vertex_position);
+
+            vtx.intensity += weighted_intensity;
+            vtx.illumination_offset_weight += weight;
+            vtx.illumination_offset += weight * illumination_offset;
+
             vtx.mtx.unlock();
           }
         }
       },
       N_voxel);
+
+  for (int level = 0; level < N_hierarchies; ++level)
+  {
+    int N_vertex = lgh->grids[level]->vertices.size();
+    int X        = lgh->grids[level]->resolution[0] + 1;
+    int Y        = lgh->grids[level]->resolution[1] + 1;
+    int Z        = lgh->grids[level]->resolution[2] + 1;
+
+    ParallelFor(
+        [&](int vertex_index)
+        {
+          int x = vertex_index / (Y * Z);
+          int y = (vertex_index / Z) % Y;
+          int z = vertex_index % Z;
+
+          GridVertex& vtx         = lgh->grids[level]->at(x, y, z);
+          vtx.illumination_center = vtx.vertex_position;
+          if (vtx.illumination_offset_weight != .0f)
+            vtx.illumination_center += vtx.illumination_offset / vtx.illumination_offset_weight;
+        },
+        N_vertex);
+  }
 
   return std::move(lgh);
 }
