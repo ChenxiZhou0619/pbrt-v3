@@ -1,36 +1,50 @@
 #pragma once
 #include <medium.h>
-namespace pbrt {
+#include <mutex>
+namespace pbrt
+{
 
 class NanovdbMedium;
 
-struct GridVertex {
-    Point3f vertex_position;
-    Point3f illumination_center;
-    Spectrum intensity;
+struct GridVertex
+{
+  Point3f  vertex_position;
+  Point3f  illumination_center;
+  Spectrum intensity = Spectrum(.0f);
+
+  std::mutex mtx;
 };
 
-class LightGrid {
+class LightGrid
+{
   public:
-    LightGrid() = default;
+  LightGrid() = default;
 
-    LightGrid(Float voxel_size, Vector3i resolution);
+  LightGrid(Float voxel_size, Vector3i resolution, Point3f p_min);
 
-  private:
-    Float voxel_size;
-    Vector3i resolution;
-    std::vector<GridVertex> grid;
+  GridVertex& at(int x, int y, int z);
+
+  const GridVertex& at(int x, int y, int z) const;
+
+  Float                   voxel_size;
+  Vector3i                resolution;
+  std::vector<GridVertex> vertices;
 };
 
-class LightGridHierarchy {
+class LightGridHierarchy
+{
   public:
-    LightGridHierarchy() = default;
+  LightGridHierarchy(int N_hierarchies);
 
-  private:
-    std::vector<LightGrid> hierarchy;
+  int                                     N_hierarchies;
+  std::vector<std::unique_ptr<LightGrid>> grids;
+
+  //* Friend declarations
+  friend std::unique_ptr<LightGridHierarchy> CreateLGH(std::shared_ptr<NanovdbMedium> media,
+                                                       int N_hierarchies);
 };
 
-std::unique_ptr<LightGridHierarchy> CreateLGH(
-    std::shared_ptr<NanovdbMedium> media);
+std::unique_ptr<LightGridHierarchy> CreateLGH(std::shared_ptr<NanovdbMedium> media,
+                                              int                            N_hierarchies);
 
-}  // namespace pbrt
+} // namespace pbrt

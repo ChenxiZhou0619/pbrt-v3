@@ -561,9 +561,21 @@ ADD_SANITIZERS ( cyhair2pbrt )
 ADD_SUBDIRECTORY(src/ext)
 
 
-ADD_EXECUTABLE (open2nano src/tools/open2nano.cpp)
-TARGET_LINK_DIRECTORIES(open2nano PUBLIC build/src/ext/openvdb/openvdb/openvdb )
-TARGET_LINK_LIBRARIES(open2nano openvdb z)
+#ADD_EXECUTABLE (open2nano src/tools/open2nano.cpp)
+#TARGET_LINK_DIRECTORIES(open2nano PUBLIC build/src/ext/openvdb/openvdb/openvdb )
+#TARGET_LINK_LIBRARIES(open2nano openvdb z)
+
+
+ADD_EXECUTABLE (utest 
+
+  src/main/test.cpp
+
+  src/integrators/LGH/lightgrid.cpp
+
+  src/media/nanovdbmedium.cpp
+
+)
+TARGET_LINK_LIBRARIES ( utest ${ALL_PBRT_LIBS} )
 
 # Unit test
 
