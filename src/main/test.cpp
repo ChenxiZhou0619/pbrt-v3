@@ -44,6 +44,8 @@ int main()
     std::cout << ", illumination center is : " << vtx.illumination_center << std::endl;
   }
 
+  InitializeDeepShadowmap(*nanovdb_media, *lgh);
+
   pbrtCleanup();
   return 0;
 }

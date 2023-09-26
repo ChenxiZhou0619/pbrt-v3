@@ -1,4 +1,5 @@
 #pragma once
+#include "deepshadowmap.h"
 #include <medium.h>
 #include <mutex>
 namespace pbrt
@@ -14,6 +15,8 @@ struct GridVertex
   Point3f  illumination_center;
   Vector3f illumination_offset        = Vector3f(.0f, .0f, .0f);
   Float    illumination_offset_weight = .0f;
+
+  std::unique_ptr<DeepShadowMap> deepshadowmap = nullptr;
 
   std::mutex mtx;
 };
@@ -49,5 +52,7 @@ class LightGridHierarchy
 
 std::unique_ptr<LightGridHierarchy> CreateLGH(std::shared_ptr<NanovdbMedium> media,
                                               int                            N_hierarchies);
+
+void InitializeDeepShadowmap(const NanovdbMedium& media, LightGridHierarchy& lgh);
 
 } // namespace pbrt

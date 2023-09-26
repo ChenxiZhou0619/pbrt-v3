@@ -153,6 +153,18 @@ std::unique_ptr<LightGridHierarchy> CreateLGH(std::shared_ptr<NanovdbMedium> med
           vtx.illumination_center = vtx.vertex_position;
           if (vtx.illumination_offset_weight != .0f)
             vtx.illumination_center += vtx.illumination_offset / vtx.illumination_offset_weight;
+
+          //* Construct deep shadowmap for every vertex with non-zero intensity
+          if (!vtx.intensity.IsBlack())
+          {
+            // TODO compute the resolution and r_l
+            int   resolution;
+            Float r_l;
+
+            //* Just malloc the memory
+            vtx.deepshadowmap =
+                std::make_unique<DeepShadowMap>(resolution, r_l, vtx.illumination_center);
+          }
         },
         N_vertex);
   }
@@ -160,4 +172,54 @@ std::unique_ptr<LightGridHierarchy> CreateLGH(std::shared_ptr<NanovdbMedium> med
   return std::move(lgh);
 }
 
+void InitializeDeepShadowmap(const NanovdbMedium& media, LightGridHierarchy& lgh)
+{
+  int N = lgh.N_hierarchies;
+  for (int level = 0; level < N; ++level)
+  {
+    int N_vertex = lgh.grids[level]->vertices.size();
+    int X        = lgh.grids[level]->resolution[0] + 1;
+    int Y        = lgh.grids[level]->resolution[1] + 1;
+    int Z        = lgh.grids[level]->resolution[2] + 1;
+
+    // TODO
+    auto queryFilterdDensity = [&](Point3f p_world, Float filter_size) -> Float { return .0f; };
+    auto accmulateDensity    = [&](Point3f from, Vector3f direction, Float tMax,
+                                Float accmulated_densities[4]) {};
+
+    ParallelFor(
+        [&](int vertex_index)
+        {
+          int x = vertex_index / (Y * Z);
+          int y = (vertex_index / Z) % Y;
+          int z = vertex_index % Z;
+
+          GridVertex& vtx = lgh.grids[level]->at(x, y, z);
+
+          if (!vtx.deepshadowmap)
+            return;
+
+          //* Compute accumulated filtered density towards each texel
+          Point3f from       = vtx.illumination_center;
+          int     resolution = vtx.deepshadowmap->resolution;
+          // TODO compute tmax
+          Float tMax;
+          for (int face = 0; face < 6; ++face)
+          {
+            for (int u = 0; u < resolution; ++u)
+            {
+              for (int v = 0; v < resolution; ++v)
+              {
+                //* Compute the direction towards each texel
+                Vector3f direction = vtx.deepshadowmap->texelToDirection(face, u, v);
+                Float    accmulated_densities[4];
+                accmulateDensity(from, direction, tMax, accmulated_densities);
+                vtx.deepshadowmap->setCubeMap(accmulated_densities, u, v);
+              }
+            }
+          }
+        },
+        N);
+  }
+}
 }; // namespace pbrt

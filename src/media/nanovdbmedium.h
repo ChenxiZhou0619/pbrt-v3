@@ -395,6 +395,8 @@ class NanovdbMedium : public Medium
   friend std::unique_ptr<LightGridHierarchy> CreateLGH(std::shared_ptr<NanovdbMedium> media,
                                                        int N_hierarchies);
 
+  friend void InitializeDeepShadowmap(const NanovdbMedium& media, LightGridHierarchy& lgh);
+
   private:
   Float g;
 
