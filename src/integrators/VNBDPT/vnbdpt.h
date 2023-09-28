@@ -17,6 +17,25 @@ namespace pbrt
 
 struct VN_Vertex
 {
+  //* Static function
+  static VN_Vertex createCamera(const Camera* camera, const Ray& ray, const Spectrum& beta);
+  static VN_Vertex createLight(const Light* light, const Ray& ray, const Normal3f& n_light,
+                               const Spectrum& Le, Float pdf);
+  static VN_Vertex createMedium(const MediumInteraction& mi, const Spectrum& beta, Float pdf,
+                                const VN_Vertex& prev);
+  static VN_Vertex createSurface(const SurfaceInteraction& si, const Spectrum& beta, Float pdf,
+                                 const VN_Vertex& prev);
+
+  //* Member function
+  bool               IsLight() const;
+  bool               IsConnectible() const;
+  bool               IsOnSurface() const;
+  const Interaction& GetInteraction() const;
+  Spectrum           f(const VN_Vertex& next, TransportMode mode) const;
+  Spectrum           Le(const Scene& scene, const VN_Vertex& towards) const;
+  const Normal3f&    ns() const;
+
+  //* Data field
   enum class Type
   {
     Camera,
@@ -27,14 +46,10 @@ struct VN_Vertex
 
   Spectrum beta;
   bool     delta = false;
-
-  static VN_Vertex createCamera(const Camera* camera, const Ray& ray, const Spectrum& beta);
-  static VN_Vertex createLight(const Light* light, const Ray& ray, const Normal3f& n_light,
-                               const Spectrum& Le, Float pdf);
-  static VN_Vertex createMedium(const MediumInteraction& mi, const Spectrum& beta, Float pdf,
-                                const VN_Vertex& prev);
-  static VN_Vertex createSurface(const SurfaceInteraction& si, const Spectrum& beta, Float pdf,
-                                 const VN_Vertex& prev);
+  // The pdf of sampling towards this vertex by forward strategy in solid angle measure
+  Float pdf_forward_dir;
+  // The pdf of sampling towards this vertex by inverse strategy in solid angle measure
+  Float pdf_inverse_dir;
 };
 
 int VN_GenerateCameraSubpath(const Scene& scene, Sampler& sampler, MemoryArena& arena, int maxDepth,
@@ -54,6 +69,10 @@ Spectrum VN_ConnectBDPT(const Scene& scene, VN_Vertex* light_subpath, VN_Vertex*
 
 int VN_RandomWalk(const Scene& scene, RayDifferential ray, Sampler& sampler, MemoryArena& arena,
                   Spectrum beta, Float pdf, int maxDepth, TransportMode mode, VN_Vertex* subpath);
+
+Float VN_BDPTMIS(const Scene& scene, VN_Vertex* light_subpath, VN_Vertex* camera_subpath,
+                 const VN_Vertex& sampled, int n_lv, int n_cv, const Distribution1D& lightPdf,
+                 const std::unordered_map<const Light*, size_t>& lightToIndex);
 
 class VNBDPTIntegrator : public Integrator
 {
