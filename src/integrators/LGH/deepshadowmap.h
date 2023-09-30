@@ -2,18 +2,16 @@
 
 #include <medium.h>
 #include <texture.h>
-namespace pbrt
-{
+namespace pbrt {
 
 //* Used to store the accumulated density
-struct FloatTexture2D
-{
-  public:
+struct FloatTexture2D {
+public:
   FloatTexture2D(Vector2i resolution);
 
   Float at(Point2f uv) const;
 
-  private:
+private:
   std::vector<Float> data;
 };
 
@@ -28,29 +26,28 @@ class NanovdbMedium;
 class LightGridHierarchy;
 
 // TODO pre-defined distance
-class DeepShadowMap
-{
-  public:
+class DeepShadowMap {
+public:
   //* The cube-map contains resolution ^ 2 * 6 texels
-  DeepShadowMap(int resolution, Float r_l, Point3f center);
+  DeepShadowMap(int resolution, Float r_l, Point3f center){};
 
   Spectrum query(Vector3f direction, Float distance) const;
 
-  Vector3f texelToDirection(int face, int u, int v) const;
+  Vector3f texelToDirection(int face, int u, int v) const {};
 
-  public:
+public:
   int     resolution;
   Point3f center;
 
-  private:
+private:
   std::unique_ptr<FloatTexture2D> cubemap_t0[6];
   std::unique_ptr<FloatTexture2D> cubemap_t1[6];
   std::unique_ptr<FloatTexture2D> cubemap_t2[6];
   std::unique_ptr<FloatTexture2D> cubemap_t3[6];
 
   // TODO
-  void setCubeMap(Float accmulated_densities[4], int u, int v);
+  void setCubeMap(Float accmulated_densities[4], int u, int v){};
 
-  friend void InitializeDeepShadowmap(const NanovdbMedium& media, LightGridHierarchy& lgh);
+  friend void InitializeDeepShadowmap(const NanovdbMedium &media, LightGridHierarchy &lgh){};
 };
 } // namespace pbrt

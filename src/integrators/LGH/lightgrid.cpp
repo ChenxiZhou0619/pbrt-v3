@@ -1,22 +1,17 @@
 #include "lightgrid.h"
 #include <media/nanovdbmedium.h>
 #include <parallel.h>
-namespace pbrt
-{
+namespace pbrt {
 
 //*--------------------------------------------------------------------------------
 LightGrid::LightGrid(Float voxel_size, Vector3i resolution, Point3f p_min)
-    : voxel_size(voxel_size), resolution(resolution)
-{
+    : voxel_size(voxel_size), resolution(resolution) {
   int N_vertex = (resolution[0] + 1) * (resolution[1] + 1) * (resolution[2] + 1);
   vertices     = std::vector<GridVertex>(N_vertex);
 
-  for (int x = 0; x <= resolution[0]; ++x)
-  {
-    for (int y = 0; y <= resolution[1]; ++y)
-    {
-      for (int z = 0; z <= resolution[2]; ++z)
-      {
+  for (int x = 0; x <= resolution[0]; ++x) {
+    for (int y = 0; y <= resolution[1]; ++y) {
+      for (int z = 0; z <= resolution[2]; ++z) {
         Point3f vertex_position           = p_min + Vector3f(x, y, z) * voxel_size;
         this->at(x, y, z).vertex_position = vertex_position;
       }
@@ -24,27 +19,23 @@ LightGrid::LightGrid(Float voxel_size, Vector3i resolution, Point3f p_min)
   }
 }
 
-GridVertex& LightGrid::at(int x, int y, int z)
-{
+GridVertex &LightGrid::at(int x, int y, int z) {
   int offset = x * (resolution[1] + 1) * (resolution[2] + 1) + y * (resolution[2] + 1) + z;
   return vertices[offset];
 }
 
-const GridVertex& LightGrid::at(int x, int y, int z) const
-{
+const GridVertex &LightGrid::at(int x, int y, int z) const {
   int offset = x * (resolution[1] + 1) * (resolution[2] + 1) + y * (resolution[2] + 1) + z;
   return vertices[offset];
 }
 
 //*--------------------------------------------------------------------------------
-LightGridHierarchy::LightGridHierarchy(int N_hierarchies) : N_hierarchies(N_hierarchies)
-{
+LightGridHierarchy::LightGridHierarchy(int N_hierarchies) : N_hierarchies(N_hierarchies) {
   grids = std::vector<std::unique_ptr<LightGrid>>(N_hierarchies);
 }
 
 std::unique_ptr<LightGridHierarchy> CreateLGH(std::shared_ptr<NanovdbMedium> media,
-                                              int                            N_hierarchies)
-{
+                                              int                            N_hierarchies) {
 
   Bounds3f medium_worldbound = media->medium_worldbound;
 
@@ -60,8 +51,7 @@ std::unique_ptr<LightGridHierarchy> CreateLGH(std::shared_ptr<NanovdbMedium> med
   //* The resolution of level i is 2^i
   Float    cell_size = diagnol_max;
   Vector3i resolution(1, 1, 1);
-  for (int level = 0; level < N_hierarchies; ++level)
-  {
+  for (int level = 0; level < N_hierarchies; ++level) {
     lgh->grids[level] = std::make_unique<LightGrid>(cell_size, resolution, p_min);
 
     cell_size *= 0.5f;
@@ -77,8 +67,7 @@ std::unique_ptr<LightGridHierarchy> CreateLGH(std::shared_ptr<NanovdbMedium> med
   int N_voxel = voxel_res_x * voxel_res_y * voxel_res_z;
 
   ParallelFor(
-      [&](int emission_voxel_index)
-      {
+      [&](int emission_voxel_index) {
         int voxel_index_x = emission_voxel_index / (voxel_res_y * voxel_res_z) + media->minIndex[0];
         int voxel_index_y = (emission_voxel_index / voxel_res_z) % voxel_res_y + media->minIndex[1];
         int voxel_index_z = emission_voxel_index % voxel_res_z + media->minIndex[2];
@@ -89,16 +78,14 @@ std::unique_ptr<LightGridHierarchy> CreateLGH(std::shared_ptr<NanovdbMedium> med
         Spectrum sigma_a = media->sampleDensity(voxel_center_world) * media->sigma_a;
         Spectrum Le      = media->Le(voxel_center_world);
 
-        if ((sigma_a * Le).IsBlack())
-          return;
+        if ((sigma_a * Le).IsBlack()) return;
 
         Float voxel_volume = std::pow(media->voxel_size, 3);
 
         //* A voxel will updates 8 verticies in each hierarchy
         Vector3f diag = (voxel_center_world - p_min);
 
-        for (int level = 0; level < N_hierarchies; ++level)
-        {
+        for (int level = 0; level < N_hierarchies; ++level) {
           Float    cell_size  = lgh->grids[level]->voxel_size;
           Vector3f cell_index = diag / cell_size;
 
@@ -106,13 +93,12 @@ std::unique_ptr<LightGridHierarchy> CreateLGH(std::shared_ptr<NanovdbMedium> med
           int iy = cell_index.y;
           int iz = cell_index.z;
 
-          for (int order = 0; order < 8; ++order)
-          {
+          for (int order = 0; order < 8; ++order) {
             int x = ix + ((order & 0b0100) ? 1 : 0); //! operator priority
             int y = iy + ((order & 0b0010) ? 1 : 0);
             int z = iz + ((order & 0b0001) ? 1 : 0);
 
-            GridVertex& vtx = lgh->grids[level]->at(x, y, z);
+            GridVertex &vtx = lgh->grids[level]->at(x, y, z);
 
             Float trilinear_weight = 1.f;
             trilinear_weight *= 1.f - std::abs(cell_index.x - x);
@@ -135,28 +121,25 @@ std::unique_ptr<LightGridHierarchy> CreateLGH(std::shared_ptr<NanovdbMedium> med
       },
       N_voxel);
 
-  for (int level = 0; level < N_hierarchies; ++level)
-  {
+  for (int level = 0; level < N_hierarchies; ++level) {
     int N_vertex = lgh->grids[level]->vertices.size();
     int X        = lgh->grids[level]->resolution[0] + 1;
     int Y        = lgh->grids[level]->resolution[1] + 1;
     int Z        = lgh->grids[level]->resolution[2] + 1;
 
     ParallelFor(
-        [&](int vertex_index)
-        {
+        [&](int vertex_index) {
           int x = vertex_index / (Y * Z);
           int y = (vertex_index / Z) % Y;
           int z = vertex_index % Z;
 
-          GridVertex& vtx         = lgh->grids[level]->at(x, y, z);
+          GridVertex &vtx         = lgh->grids[level]->at(x, y, z);
           vtx.illumination_center = vtx.vertex_position;
           if (vtx.illumination_offset_weight != .0f)
             vtx.illumination_center += vtx.illumination_offset / vtx.illumination_offset_weight;
 
           //* Construct deep shadowmap for every vertex with non-zero intensity
-          if (!vtx.intensity.IsBlack())
-          {
+          if (!vtx.intensity.IsBlack()) {
             // TODO compute the resolution and r_l
             int   resolution;
             Float r_l;
@@ -172,11 +155,9 @@ std::unique_ptr<LightGridHierarchy> CreateLGH(std::shared_ptr<NanovdbMedium> med
   return std::move(lgh);
 }
 
-void InitializeDeepShadowmap(const NanovdbMedium& media, LightGridHierarchy& lgh)
-{
+void InitializeDeepShadowmap_(const NanovdbMedium &media, LightGridHierarchy &lgh) {
   int N = lgh.N_hierarchies;
-  for (int level = 0; level < N; ++level)
-  {
+  for (int level = 0; level < N; ++level) {
     int N_vertex = lgh.grids[level]->vertices.size();
     int X        = lgh.grids[level]->resolution[0] + 1;
     int Y        = lgh.grids[level]->resolution[1] + 1;
@@ -188,33 +169,28 @@ void InitializeDeepShadowmap(const NanovdbMedium& media, LightGridHierarchy& lgh
                                 Float accmulated_densities[4]) {};
 
     ParallelFor(
-        [&](int vertex_index)
-        {
+        [&](int vertex_index) {
           int x = vertex_index / (Y * Z);
           int y = (vertex_index / Z) % Y;
           int z = vertex_index % Z;
 
-          GridVertex& vtx = lgh.grids[level]->at(x, y, z);
+          GridVertex &vtx = lgh.grids[level]->at(x, y, z);
 
-          if (!vtx.deepshadowmap)
-            return;
+          if (!vtx.deepshadowmap) return;
 
           //* Compute accumulated filtered density towards each texel
           Point3f from       = vtx.illumination_center;
           int     resolution = vtx.deepshadowmap->resolution;
           // TODO compute tmax
           Float tMax;
-          for (int face = 0; face < 6; ++face)
-          {
-            for (int u = 0; u < resolution; ++u)
-            {
-              for (int v = 0; v < resolution; ++v)
-              {
+          for (int face = 0; face < 6; ++face) {
+            for (int u = 0; u < resolution; ++u) {
+              for (int v = 0; v < resolution; ++v) {
                 //* Compute the direction towards each texel
                 Vector3f direction = vtx.deepshadowmap->texelToDirection(face, u, v);
                 Float    accmulated_densities[4];
                 accmulateDensity(from, direction, tMax, accmulated_densities);
-                vtx.deepshadowmap->setCubeMap(accmulated_densities, u, v);
+                //                vtx.deepshadowmap->setCubeMap(accmulated_densities, u, v);
               }
             }
           }
