@@ -185,7 +185,6 @@ Spectrum VN_ConnectBDPT(const Scene &scene, VN_Vertex *light_subpath, VN_Vertex 
         Spectrum beta = l_vtx->beta * sampled.beta;
         Spectrum f    = l_vtx->f(sampled, TransportMode::Importance);
         L             = beta * f;
-        // ? Figure this out
         if (l_vtx->IsOnSurface()) L *= AbsDot(wi, l_vtx->ns());
         if (!L.IsBlack()) L *= vis.Tr(scene, sampler);
       }
@@ -511,7 +510,7 @@ Float PDF(const VN_Vertex *V_minus, const VN_Vertex *V, const VN_Vertex *V_plus,
 
   Float pdf, un_used;
   if (V->type == VN_Vertex::Type::Camera)
-    V->ei.camera->Pdf_We(V->ei.SpawnRay(wo), &un_used, &pdf);
+    V->ei.camera->Pdf_We(V->ei.SpawnRay(wi), &un_used, &pdf);
   else if (V->type == VN_Vertex::Type::Surface)
     pdf = V->si.bsdf->Pdf(wo, wi);
   else if (V->type == VN_Vertex::Type::Medium)
@@ -543,7 +542,7 @@ Float PDFLightOrigin(const Scene &scene, const VN_Vertex *shading_p, const VN_Ve
 Float PDFLight(const VN_Vertex *light_v, const VN_Vertex *v, const Scene &scene) {
   Vector3f w           = v->p() - light_v->p();
   Float    inv_distsqr = 1.f / w.LengthSquared();
-  Normalize(w);
+  w                    = Normalize(w);
   Float pdf;
 
   // TODO Handle infinite light
