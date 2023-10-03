@@ -89,6 +89,9 @@ struct VN_Vertex {
   VN_Vertex(const SurfaceInteraction &si, const Spectrum &beta)
       : type(Type::Surface), beta(beta), si(si) {}
 
+  VN_Vertex(const MediumInteraction &mi, const Spectrum &beta)
+      : type(VN_Vertex::Type::Medium), beta(beta), mi(mi) {}
+
   VN_Vertex(const VN_Vertex &v) { memcpy(this, &v, sizeof(VN_Vertex)); }
   VN_Vertex &operator=(const VN_Vertex &v) {
     memcpy(this, &v, sizeof(VN_Vertex));
