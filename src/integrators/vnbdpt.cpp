@@ -123,8 +123,8 @@ int VN_RandomWalk(const Scene &scene, RayDifferential ray, Sampler &sampler, Mem
 
           // sample phase and spwan the path
           Vector3f wi;
-          Vector3f wo = Normalize(-ray.d);
-          maj_rec.phase->Sample_p(wo, &wi, sampler.Get2D());
+          Vector3f wo     = Normalize(-ray.d);
+          pdf_forward_dir = maj_rec.phase->Sample_p(wo, &wi, sampler.Get2D());
 
           ray             = mi.SpawnRay(wi);
           scattered       = true;
@@ -263,7 +263,7 @@ Spectrum VN_ConnectBDPT(const Scene &scene, VN_Vertex *light_subpath, VN_Vertex 
         sampled       = VN_Vertex::createCamera(&camera, vis.P1(), Wi / pdf);
         Spectrum beta = l_vtx->beta * sampled.beta;
         Spectrum f    = l_vtx->f(sampled, TransportMode::Importance);
-        //! L             = beta * f;
+        L             = beta * f;
         if (l_vtx->IsOnSurface()) L *= AbsDot(wi, l_vtx->ns());
         if (!L.IsBlack()) L *= vis.Tr(scene, sampler);
       }
@@ -284,7 +284,7 @@ Spectrum VN_ConnectBDPT(const Scene &scene, VN_Vertex *light_subpath, VN_Vertex 
         sampled             = VN_Vertex::createLight(ei, light_weight / (pdf * light_pdf), 0);
         sampled.pdf_forward = PDFLightOrigin(scene, c_vtx, &sampled, light_distr, light_to_index);
 
-        //! L = c_vtx->beta * c_vtx->f(sampled, TransportMode::Radiance) * sampled.beta;
+        L = c_vtx->beta * c_vtx->f(sampled, TransportMode::Radiance) * sampled.beta;
 
         if (c_vtx->IsOnSurface()) L *= AbsDot(wi, c_vtx->ns());
         if (!L.IsBlack()) L *= vis.Tr(scene, sampler);
@@ -295,7 +295,7 @@ Spectrum VN_ConnectBDPT(const Scene &scene, VN_Vertex *light_subpath, VN_Vertex 
       Spectrum beta = l_vtx->beta * c_vtx->beta;
       Spectrum f =
           l_vtx->f(*c_vtx, TransportMode::Importance) * c_vtx->f(*l_vtx, TransportMode::Radiance);
-      //! L = beta * f;
+      L = beta * f;
       if (!L.IsBlack()) {
         Spectrum G = VN_G(scene, sampler, l_vtx, c_vtx);
         L *= G;
@@ -322,8 +322,6 @@ Float VN_BDPTMIS(const Scene &scene, VN_Vertex *light_subpath, VN_Vertex *camera
   VN_Vertex *c_vtx     = n_cv > 0 ? camera_subpath + n_cv - 1 : nullptr;
   VN_Vertex *l_vtx_prv = n_lv > 1 ? l_vtx - 1 : nullptr;
   VN_Vertex *c_vtx_prv = n_cv > 1 ? c_vtx - 1 : nullptr;
-
-  if (c_vtx_prv->type != VN_Vertex::Type::Medium) return 0; //!
 
   //  Temporal replace vertex if sampled in connection
   TemporalProxy<VN_Vertex> a1;
