@@ -224,7 +224,8 @@ int VN_GenerateLightSubpath(const Scene &scene, Sampler &sampler, MemoryArena &a
 
   if (pdf_position == 0 || pdf_direction == 0 || Le.IsBlack()) return 0;
 
-  light_subpath[0] = VN_Vertex::createLight(light, ray, n_light, Le, pdf_position * light_pdf);
+  light_subpath[0] = VN_Vertex::createLight(light, ray, n_light, Le / (pdf_position * light_pdf),
+                                            pdf_position * light_pdf);
   Spectrum beta    = Le * AbsDot(n_light, ray.d) / (light_pdf * pdf_position * pdf_direction);
 
   return VN_RandomWalk(scene, ray, sampler, arena, beta, pdf_direction, maxDepth - 1,
@@ -270,24 +271,10 @@ Spectrum VN_ConnectBDPT(const Scene &scene, VN_Vertex *light_subpath, VN_Vertex 
     }
   } else if (n_lv == 1 /*NEE estimation for camara subpath*/) {
     if (c_vtx->IsConnectible()) {
-      Float            light_pdf;
-      VisibilityTester vis;
-      Vector3f         wi;
-      Float            pdf;
-      int              light_idx = light_distr.SampleDiscrete(sampler.Get1D(), &light_pdf);
-      const Light     *light     = scene.lights[light_idx].get();
-      Spectrum         light_weight =
-          light->Sample_Li(c_vtx->GetInteraction(), sampler.Get2D(), &wi, &pdf, &vis);
-
-      if (pdf > .0f && !light_weight.IsBlack()) {
-        VN_EndPointInteraction ei(vis.P1(), light);
-        sampled             = VN_Vertex::createLight(ei, light_weight / (pdf * light_pdf), 0);
-        sampled.pdf_forward = PDFLightOrigin(scene, c_vtx, &sampled, light_distr, light_to_index);
-
-        L = c_vtx->beta * c_vtx->f(sampled, TransportMode::Radiance) * sampled.beta;
-
-        if (c_vtx->IsOnSurface()) L *= AbsDot(wi, c_vtx->ns());
-        if (!L.IsBlack()) L *= vis.Tr(scene, sampler);
+      Vector3f light_to_p = Normalize(c_vtx->p() - l_vtx->p());
+      if (Dot(light_to_p, l_vtx->ng()) > 0) {
+        L = c_vtx->beta * c_vtx->f(*l_vtx, TransportMode::Radiance) * l_vtx->beta;
+        L *= VN_G(scene, sampler, c_vtx, l_vtx);
       }
     }
   } else {
@@ -325,10 +312,7 @@ Float VN_BDPTMIS(const Scene &scene, VN_Vertex *light_subpath, VN_Vertex *camera
 
   //  Temporal replace vertex if sampled in connection
   TemporalProxy<VN_Vertex> a1;
-  if (n_lv == 1)
-    a1 = {l_vtx, sampled};
-  else if (n_cv == 1)
-    a1 = {c_vtx, sampled};
+  if (n_cv == 1) a1 = {c_vtx, sampled};
 
   TemporalProxy<bool> a2, a3;
   if (l_vtx) a2 = {&l_vtx->delta, false};
