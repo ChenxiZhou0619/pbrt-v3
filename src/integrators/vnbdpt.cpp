@@ -223,7 +223,6 @@ int VN_GenerateLightSubpath(const Scene &scene, Sampler &sampler, MemoryArena &a
 
   if (pdf_position == 0 || pdf_direction == 0 || Le.IsBlack()) return 0;
 
-  // TODO Handle infinite light
   light_subpath[0] = VN_Vertex::createLight(light, ray, n_light, Le, pdf_position * light_pdf);
   Spectrum beta    = Le * AbsDot(n_light, ray.d) / (light_pdf * pdf_position * pdf_direction);
 
@@ -547,7 +546,6 @@ Spectrum VN_Vertex::Le(const Scene &scene, const VN_Vertex *towards) const {
   if (w.LengthSquared() == 0) return Spectrum(.0f);
   w = Normalize(w);
 
-  // TODO Infinite light
   const AreaLight *light = si.primitive->GetAreaLight();
   return light->L(si, w);
 }
@@ -561,7 +559,6 @@ const Normal3f &VN_Vertex::ng() const { return GetInteraction().n; }
 Point3f VN_Vertex::p() const { return GetInteraction().p; }
 
 Float PDFDensityConvert(const VN_Vertex *from, const VN_Vertex *to, Float pdf_dir) {
-  // TODO Handle infinite light
 
   Vector3f w = to->p() - from->p();
   if (w.LengthSquared() == 0) return 0;
@@ -605,7 +602,6 @@ Float PDFLightOrigin(const Scene &scene, const VN_Vertex *shading_p, const VN_Ve
   Vector3f w = shading_p->p() - light_v->p();
   if (w.LengthSquared() == 0) return 0;
   w = Normalize(w);
-  // TODO Handle infinite light
 
   Float        pdf_position, pdf_direction, pdf_choice;
   const Light *light = light_v->type == VN_Vertex::Type::Light
@@ -625,7 +621,6 @@ Float PDFLight(const VN_Vertex *light_v, const VN_Vertex *v, const Scene &scene)
   w                    = Normalize(w);
   Float pdf;
 
-  // TODO Handle infinite light
   const Light *light = light_v->type == VN_Vertex::Type::Light
                            ? light_v->ei.light
                            : light_v->si.primitive->GetAreaLight();
