@@ -1621,7 +1621,13 @@ Integrator *RenderOptions::MakeIntegrator() const {
     integrator =
         CreateVolPathIntegrator_LineIntegration(IntegratorParams, sampler, camera, emissionMediums);
   } else if (IntegratorName == "vnbdpt") {
-    integrator = CreateVNBDPTIntegrator(IntegratorParams, sampler, camera);
+    std::vector<std::shared_ptr<Medium>> emissionMediums;
+
+    for (auto medium : namedMedia) {
+      if (medium.second->SampleVolumetricEmission()) emissionMediums.emplace_back(medium.second);
+    }
+
+    integrator = CreateVNBDPTIntegrator(IntegratorParams, sampler, camera, emissionMediums);
   }
 
   else {

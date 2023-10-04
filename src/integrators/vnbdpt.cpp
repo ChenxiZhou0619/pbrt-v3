@@ -36,14 +36,15 @@ private:
   Type *target, backup;
 };
 
-VNBDPTIntegrator::VNBDPTIntegrator(std::shared_ptr<Sampler>      sampler,
-                                   std::shared_ptr<const Camera> camera, int maxDepth,
-                                   bool visualizeStrategies, bool visualizeWeights,
-                                   const Bounds2i    &pixelBounds,
-                                   const std::string &lightSampleStrategy)
+VNBDPTIntegrator::VNBDPTIntegrator(
+    std::shared_ptr<Sampler> sampler, std::shared_ptr<const Camera> camera, int maxDepth,
+    bool visualizeStrategies, bool visualizeWeights, const Bounds2i &pixelBounds,
+    const std::vector<std::shared_ptr<VolumetricLight>> &volumetric_lights,
+    const std::string                                   &lightSampleStrategy)
     : sampler(sampler), camera(camera), maxDepth(maxDepth),
       visualizeStrategies(visualizeStrategies), visualizeWeights(visualizeWeights),
-      pixelBounds(pixelBounds), lightSampleStrategy(lightSampleStrategy) {}
+      pixelBounds(pixelBounds), lightSampleStrategy(lightSampleStrategy),
+      volumetric_lights(volumetric_lights) {}
 
 int VN_RandomWalk(const Scene &scene, RayDifferential ray, Sampler &sampler, MemoryArena &arena,
                   Spectrum beta, Float pdf, int maxDepth, TransportMode mode, VN_Vertex *subpath) {
@@ -376,6 +377,12 @@ void VNBDPTIntegrator::Render(const Scene &scene) {
   for (size_t i = 0; i < scene.lights.size(); ++i)
     light_to_index[scene.lights[i].get()] = i;
 
+  // Construct the volumetric light distribution
+  // TODO Initialize volumetric_lights_distrib
+  // TODO Initialize vlight_to_index
+  const Distribution1D *vlight_distr = volumetric_lights_distrib.get();
+  std::unordered_map<const VolumetricLight *, size_t> vlight_to_index;
+
   // Partition the image into tiles
   Film          *film          = camera->film;
   const Bounds2i sample_bounds = film->GetSampleBounds();
@@ -642,8 +649,10 @@ Spectrum VN_G(const Scene &scene, Sampler &sampler, const VN_Vertex *v0, const V
   return g * vis.Tr(scene, sampler);
 }
 
-VNBDPTIntegrator *CreateVNBDPTIntegrator(const ParamSet &params, std::shared_ptr<Sampler> sampler,
-                                         std::shared_ptr<const Camera> camera) {
+VNBDPTIntegrator *
+CreateVNBDPTIntegrator(const ParamSet &params, std::shared_ptr<Sampler> sampler,
+                       std::shared_ptr<const Camera>               camera,
+                       const std::vector<std::shared_ptr<Medium>> &emission_mediums) {
   int        maxDepth = params.FindOneInt("maxdepth", 5);
   int        np;
   const int *pb          = params.FindInt("pixelbounds", &np);
@@ -659,7 +668,17 @@ VNBDPTIntegrator *CreateVNBDPTIntegrator(const ParamSet &params, std::shared_ptr
 
   std::string lightStrategy = params.FindOneString("lightsamplestrategy", "power");
 
-  return new VNBDPTIntegrator(sampler, camera, maxDepth, false, false, pixelBounds, lightStrategy);
+  //* Construct volumetric light sample structures
+  std::vector<std::shared_ptr<VolumetricLight>> volumetric_lights;
+  for (const auto emission_medium : emission_mediums) {
+    std::shared_ptr<VolumetricLight> vol_light =
+        std::make_shared<VolumetricLight>(emission_medium.get());
+    vol_light->Initialize();
+    volumetric_lights.emplace_back(vol_light);
+  }
+
+  return new VNBDPTIntegrator(sampler, camera, maxDepth, false, false, pixelBounds,
+                              volumetric_lights, lightStrategy);
 }
 
 } // namespace pbrt

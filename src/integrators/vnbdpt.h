@@ -131,11 +131,22 @@ Float VN_BDPTMIS(const Scene &scene, VN_Vertex *light_subpath, VN_Vertex *camera
                  const VN_Vertex &sampled, int n_lv, int n_cv, const Distribution1D &lightPdf,
                  const std::unordered_map<const Light *, size_t> &lightToIndex);
 
+//*
+struct VolumetricLight {
+  VolumetricLight(const Medium *medium) : medium(medium) {}
+
+  void Initialize(){};
+
+  const Medium *medium = nullptr;
+};
+
 class VNBDPTIntegrator : public Integrator {
 public:
   VNBDPTIntegrator(std::shared_ptr<Sampler> sampler, std::shared_ptr<const Camera> camera,
                    int maxDepth, bool visualizeStrategies, bool visualizeWeights,
-                   const Bounds2i &pixelBounds, const std::string &lightSampleStrategy = "power");
+                   const Bounds2i                                      &pixelBounds,
+                   const std::vector<std::shared_ptr<VolumetricLight>> &volumetric_lights,
+                   const std::string &lightSampleStrategy = "power");
 
   void Render(const Scene &scene);
 
@@ -148,8 +159,14 @@ private:
   const bool        visualizeWeights;
   const Bounds2i    pixelBounds;
   const std::string lightSampleStrategy;
+
+  std::shared_ptr<Distribution1D>               volumetric_lights_distrib;
+  std::vector<std::shared_ptr<VolumetricLight>> volumetric_lights;
 };
 
-VNBDPTIntegrator *CreateVNBDPTIntegrator(const ParamSet &params, std::shared_ptr<Sampler> sampler,
-                                         std::shared_ptr<const Camera> camera);
+VNBDPTIntegrator *
+CreateVNBDPTIntegrator(const ParamSet &params, std::shared_ptr<Sampler> sampler,
+                       std::shared_ptr<const Camera>               camera,
+                       const std::vector<std::shared_ptr<Medium>> &emission_mediums);
+
 } // namespace pbrt
