@@ -83,6 +83,9 @@ struct VN_Vertex {
   // The pdf of sampling towards this vertex by inverse strategy in solid angle measure
   Float pdf_inverse;
 
+  // pdf_dt / pdf_rt
+  Float pdf_delta_div_ratio;
+
   VN_Vertex() : ei() {}
   VN_Vertex(Type type, const VN_EndPointInteraction &ei, const Spectrum &beta)
       : type(type), beta(beta), ei(ei) {}
@@ -122,14 +125,15 @@ Spectrum VN_ConnectBDPT(const Scene &scene, VN_Vertex *light_subpath, VN_Vertex 
                         int n_lv, int n_cv, const Distribution1D &light_distr,
                         const std::unordered_map<const Light *, size_t> &light_to_index,
                         const Camera &camera, Sampler &sampler, Point2f *p_raster,
-                        Float *misw = nullptr);
+                        MemoryArena &arena);
 
 int VN_RandomWalk(const Scene &scene, RayDifferential ray, Sampler &sampler, MemoryArena &arena,
                   Spectrum beta, Float pdf, int maxDepth, TransportMode mode, VN_Vertex *subpath);
 
 Float VN_BDPTMIS(const Scene &scene, VN_Vertex *light_subpath, VN_Vertex *camera_subpath,
                  const VN_Vertex &sampled, int n_lv, int n_cv, const Distribution1D &lightPdf,
-                 const std::unordered_map<const Light *, size_t> &lightToIndex);
+                 const std::unordered_map<const Light *, size_t> &lightToIndex,
+                 Float                                            c2l_delta_div_ratio);
 
 //*
 struct VolumetricLight {

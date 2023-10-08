@@ -62,6 +62,8 @@ int VN_RandomWalk(const Scene &scene, RayDifferential ray, Sampler &sampler, Mem
     VN_Vertex *cur = subpath + bounces;
     VN_Vertex *prv = subpath + bounces - 1;
 
+    Float pdf_delta_div_ratio = 1.f;
+
     if (ray.medium) {
       bool  scattered  = false;
       bool  terminated = false;
@@ -105,6 +107,7 @@ int VN_RandomWalk(const Scene &scene, RayDifferential ray, Sampler &sampler, Mem
 
         case 2 /* Null scattering*/:
           beta *= T_maj * sigma_n / (T_maj[0] * sigma_n[0]);
+          pdf_delta_div_ratio *= sigma_n[0] / sigma_maj[0];
           return true;
 
         case 1 /*Scatter*/:
@@ -116,6 +119,7 @@ int VN_RandomWalk(const Scene &scene, RayDifferential ray, Sampler &sampler, Mem
           //* Convert the measure from solid angle measure to pathspace measure
           Float pdf_prv2cur_pathspace = PDFDensityConvert(prv, cur, pdf_forward_dir);
           cur->pdf_forward            = pdf_prv2cur_pathspace;
+          cur->pdf_delta_div_ratio    = pdf_delta_div_ratio;
 
           if (++bounces == maxDepth) {
             terminated = true;
@@ -157,6 +161,7 @@ int VN_RandomWalk(const Scene &scene, RayDifferential ray, Sampler &sampler, Mem
     //* Convert the measure from solid angle measure to pathspace measure
     Float pdf_prv2cur_pathspace = PDFDensityConvert(prv, cur, pdf_forward_dir);
     cur->pdf_forward            = pdf_prv2cur_pathspace;
+    cur->pdf_delta_div_ratio    = pdf_delta_div_ratio;
 
     if (++bounces == maxDepth) break;
 
@@ -236,7 +241,8 @@ int VN_GenerateLightSubpath(const Scene &scene, Sampler &sampler, MemoryArena &a
 Spectrum VN_ConnectBDPT(const Scene &scene, VN_Vertex *light_subpath, VN_Vertex *camera_subpath,
                         int n_lv, int n_cv, const Distribution1D &light_distr,
                         const std::unordered_map<const Light *, size_t> &light_to_index,
-                        const Camera &camera, Sampler &sampler, Point2f *p_raster, Float *misw) {
+                        const Camera &camera, Sampler &sampler, Point2f *p_raster,
+                        MemoryArena &arena) {
   Spectrum L(.0f);
 
   if (n_cv > 1 && n_lv != 0 && camera_subpath[n_cv - 1].type == VN_Vertex::Type::Light)
@@ -284,22 +290,61 @@ Spectrum VN_ConnectBDPT(const Scene &scene, VN_Vertex *light_subpath, VN_Vertex 
           l_vtx->f(*c_vtx, TransportMode::Importance) * c_vtx->f(*l_vtx, TransportMode::Radiance);
       L = beta * f;
       if (!L.IsBlack()) {
-        Spectrum G = VN_G(scene, sampler, l_vtx, c_vtx);
-        L *= G;
+        L *= VN_G(scene, sampler, l_vtx, c_vtx);
       }
     }
   }
 
-  Float mis_weight = L.IsBlack() ? .0f
-                                 : VN_BDPTMIS(scene, light_subpath, camera_subpath, sampled, n_lv,
-                                              n_cv, light_distr, light_to_index);
+  Float pdf_delta_div_ratiol = 1.f;
+  //   Spectrum Tr(1.f);
+  //  //
+  //  //* Compute the transmittance between c_vtx and l_vtx
+  //  if (n_lv != 0 && !L.IsBlack()) {
+  //    const VN_Vertex &from = n_cv == 1 ? sampled : *c_vtx;
+  //
+  //    Ray shadow_ray = from.GetInteraction().SpawnRayTo(l_vtx->GetInteraction());
+  //    shadow_ray.tMax *= shadow_ray.d.Length();
+  //    shadow_ray.d = Normalize(shadow_ray.d);
+  //
+  //    while (true) {
+  //      SurfaceInteraction isect;
+  //      bool               hit_surface = scene.Intersect(shadow_ray, &isect);
+  //      if (hit_surface && isect.primitive->GetMaterial() != nullptr) {
+  //        Tr = Spectrum(.0f);
+  //        break;
+  //      }
+  //      const Medium *medium = shadow_ray.medium;
+  //      Float         t_max  = hit_surface ? shadow_ray.tMax : (l_vtx->p() - from.p()).Length();
+  //      RNG           rng(rand());
+  //      if (medium) {
+  //        SampleT_maj(shadow_ray, t_max, rng, arena, [&](MajorantSampleRecord maj_rec) {
+  //          Spectrum sigma_n   = maj_rec.sigma_n;
+  //          Spectrum sigma_maj = maj_rec.sigma_a + maj_rec.sigma_s + maj_rec.sigma_n;
+  //
+  //          Tr *= sigma_n[0] / sigma_maj[0];
+  //          pdf_delta_div_ratiol *= sigma_n[0] / sigma_maj[0];
+  //          return true;
+  //        });
+  //        // Tr *= medium->Tr(shadow_ray, sampler);
+  //      }
+  //      if (!hit_surface) break;
+  //      shadow_ray = isect.SpawnRayTo(l_vtx->GetInteraction());
+  //    }
+  //  }
+  //  L *= Tr;
+
+  Float mis_weight = L.IsBlack()
+                         ? .0f
+                         : VN_BDPTMIS(scene, light_subpath, camera_subpath, sampled, n_lv, n_cv,
+                                      light_distr, light_to_index, pdf_delta_div_ratiol);
   L *= mis_weight;
   return L;
 }
 
 Float VN_BDPTMIS(const Scene &scene, VN_Vertex *light_subpath, VN_Vertex *camera_subpath,
                  const VN_Vertex &sampled, int n_lv, int n_cv, const Distribution1D &lightPdf,
-                 const std::unordered_map<const Light *, size_t> &lightToIndex) {
+                 const std::unordered_map<const Light *, size_t> &lightToIndex,
+                 Float                                            c2l_delta_div_ratio) {
   if (n_lv + n_cv == 2) return 1;
 
   Float sum_ri = .0f;
@@ -338,6 +383,9 @@ Float VN_BDPTMIS(const Scene &scene, VN_Vertex *light_subpath, VN_Vertex *camera
   Float ri = 1;
   for (int i = n_cv - 1; i > 0; --i) {
     ri *= remap0(camera_subpath[i].pdf_inverse) / remap0(camera_subpath[i].pdf_forward);
+    //    Float null_pdf_relative = c2l_delta_div_ratio / camera_subpath[i].pdf_delta_div_ratio;
+    //    if (!camera_subpath[i].delta && !camera_subpath[i - 1].delta) sum_ri += ri *
+    //    null_pdf_relative;
     if (!camera_subpath[i].delta && !camera_subpath[i - 1].delta) sum_ri += ri;
   }
 
@@ -345,6 +393,7 @@ Float VN_BDPTMIS(const Scene &scene, VN_Vertex *light_subpath, VN_Vertex *camera
   for (int i = n_lv - 1; i >= 0; --i) {
     ri *= remap0(light_subpath[i].pdf_inverse) / remap0(light_subpath[i].pdf_forward);
     bool delta_light_vertex = i > 0 ? light_subpath[i - 1].delta : light_subpath[0].IsDeltaLight();
+    //    Float null_pdf_relative  = c2l_delta_div_ratio / light_subpath[i].pdf_delta_div_ratio;
 
     if (!light_subpath[i].delta && !delta_light_vertex) sum_ri += ri;
   }
@@ -423,11 +472,10 @@ void VNBDPTIntegrator::Render(const Scene &scene) {
                 if ((n_cv == 1 && n_lv == 1) || depth < 0 || depth > maxDepth) continue;
                 // The pixel location for n_cv == 1
                 Point2f p_film_new = p_film;
-                Float   mis_weight = .0f;
 
-                Spectrum L_path = VN_ConnectBDPT(scene, light_subpath, camera_subpath, n_lv, n_cv,
-                                                 *light_distr, light_to_index, *camera,
-                                                 *tile_sampler, &p_film_new, &mis_weight);
+                Spectrum L_path =
+                    VN_ConnectBDPT(scene, light_subpath, camera_subpath, n_lv, n_cv, *light_distr,
+                                   light_to_index, *camera, *tile_sampler, &p_film_new, arena);
                 if (n_cv != 1)
                   L += L_path;
                 else
@@ -629,6 +677,7 @@ Spectrum VN_G(const Scene &scene, Sampler &sampler, const VN_Vertex *v0, const V
   d *= std::sqrt(g);
   if (v0->IsOnSurface()) g *= AbsDot(v0->ns(), d);
   if (v1->IsOnSurface()) g *= AbsDot(v1->ns(), d);
+  //  return g;
   VisibilityTester vis(v0->GetInteraction(), v1->GetInteraction());
   return g * vis.Tr(scene, sampler);
 }
